@@ -494,6 +494,7 @@ async function handleClick(command: ClickCommand, browser: BrowserManager): Prom
       button: command.button,
       clickCount: command.clickCount,
       delay: command.delay,
+      timeout: 30000,
     });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
@@ -507,11 +508,12 @@ async function handleType(command: TypeCommand, browser: BrowserManager): Promis
 
   try {
     if (command.clear) {
-      await locator.fill('');
+      await locator.fill('', { timeout: 30000 });
     }
 
     await locator.pressSequentially(command.text, {
       delay: command.delay,
+      timeout: 30000,
     });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
@@ -688,7 +690,7 @@ async function handleSelect(command: SelectCommand, browser: BrowserManager): Pr
 async function handleHover(command: HoverCommand, browser: BrowserManager): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.hover();
+    await locator.hover({ timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -779,7 +781,7 @@ async function handleWindowNew(
 async function handleFill(command: FillCommand, browser: BrowserManager): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.fill(command.value);
+    await locator.fill(command.value, { timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -789,7 +791,7 @@ async function handleFill(command: FillCommand, browser: BrowserManager): Promis
 async function handleCheck(command: CheckCommand, browser: BrowserManager): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.check();
+    await locator.check({ timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -799,7 +801,7 @@ async function handleCheck(command: CheckCommand, browser: BrowserManager): Prom
 async function handleUncheck(command: UncheckCommand, browser: BrowserManager): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.uncheck();
+    await locator.uncheck({ timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -823,7 +825,7 @@ async function handleDoubleClick(
 ): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.dblclick();
+    await locator.dblclick({ timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -833,7 +835,7 @@ async function handleDoubleClick(
 async function handleFocus(command: FocusCommand, browser: BrowserManager): Promise<Response> {
   const locator = browser.getLocator(command.selector);
   try {
-    await locator.focus();
+    await locator.focus({ timeout: 30000 });
   } catch (error) {
     throw toAIFriendlyError(error, command.selector);
   }
@@ -872,16 +874,16 @@ async function handleGetByRole(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'fill':
-      await locator.fill(command.value ?? '');
+      await locator.fill(command.value ?? '', { timeout: 30000 });
       return successResponse(command.id, { filled: true });
     case 'check':
-      await locator.check();
+      await locator.check({ timeout: 30000 });
       return successResponse(command.id, { checked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
   }
 }
@@ -895,10 +897,10 @@ async function handleGetByText(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
   }
 }
@@ -912,13 +914,13 @@ async function handleGetByLabel(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'fill':
-      await locator.fill(command.value ?? '');
+      await locator.fill(command.value ?? '', { timeout: 30000 });
       return successResponse(command.id, { filled: true });
     case 'check':
-      await locator.check();
+      await locator.check({ timeout: 30000 });
       return successResponse(command.id, { checked: true });
   }
 }
@@ -932,10 +934,10 @@ async function handleGetByPlaceholder(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'fill':
-      await locator.fill(command.value ?? '');
+      await locator.fill(command.value ?? '', { timeout: 30000 });
       return successResponse(command.id, { filled: true });
   }
 }
@@ -1083,7 +1085,10 @@ async function handleDownload(
   const page = browser.getPage();
   const locator = browser.getLocator(command.selector);
 
-  const [download] = await Promise.all([page.waitForEvent('download'), locator.click()]);
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    locator.click({ timeout: 30000 }),
+  ]);
 
   await download.saveAs(command.path);
   return successResponse(command.id, {
@@ -1626,10 +1631,10 @@ async function handleGetByAltText(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
   }
 }
@@ -1643,10 +1648,10 @@ async function handleGetByTitle(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
   }
 }
@@ -1660,16 +1665,16 @@ async function handleGetByTestId(
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'fill':
-      await locator.fill(command.value ?? '');
+      await locator.fill(command.value ?? '', { timeout: 30000 });
       return successResponse(command.id, { filled: true });
     case 'check':
-      await locator.check();
+      await locator.check({ timeout: 30000 });
       return successResponse(command.id, { checked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
   }
 }
@@ -1681,19 +1686,19 @@ async function handleNth(command: NthCommand, browser: BrowserManager): Promise<
 
   switch (command.subaction) {
     case 'click':
-      await locator.click();
+      await locator.click({ timeout: 30000 });
       return successResponse(command.id, { clicked: true });
     case 'fill':
-      await locator.fill(command.value ?? '');
+      await locator.fill(command.value ?? '', { timeout: 30000 });
       return successResponse(command.id, { filled: true });
     case 'check':
-      await locator.check();
+      await locator.check({ timeout: 30000 });
       return successResponse(command.id, { checked: true });
     case 'hover':
-      await locator.hover();
+      await locator.hover({ timeout: 30000 });
       return successResponse(command.id, { hovered: true });
     case 'text':
-      const text = await locator.textContent();
+      const text = await locator.textContent({ timeout: 30000 });
       return successResponse(command.id, { text });
   }
 }
