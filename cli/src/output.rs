@@ -1551,6 +1551,68 @@ Examples:
 "##
         }
 
+        // === iOS Commands ===
+        "tap" => {
+            r##"
+agent-browser tap - Tap an element (touch gesture)
+
+Usage: agent-browser tap <selector>
+
+Taps an element. This is an alias for 'click' that provides semantic clarity
+for touch-based interfaces like iOS Safari.
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser tap "#submit-button"
+  agent-browser tap @e1
+  agent-browser -p ios tap "button:has-text('Sign In')"
+"##
+        }
+        "swipe" => {
+            r##"
+agent-browser swipe - Swipe gesture (iOS)
+
+Usage: agent-browser swipe <direction> [distance]
+
+Performs a swipe gesture on iOS Safari. The direction determines
+which way the content moves (swipe up scrolls down, etc.).
+
+Arguments:
+  direction    up, down, left, or right
+  distance     Optional distance in pixels (default: 300)
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser -p ios swipe up
+  agent-browser -p ios swipe down 500
+  agent-browser -p ios swipe left
+"##
+        }
+        "device" => {
+            r##"
+agent-browser device - Manage iOS simulators
+
+Usage: agent-browser device <subcommand>
+
+Subcommands:
+  list    List available iOS simulators
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser device list
+  agent-browser -p ios device list
+"##
+        }
+
         _ => return false,
     };
     println!("{}", help.trim());
@@ -1660,7 +1722,8 @@ Options:
   --proxy-bypass <hosts>     Bypass proxy for these hosts (or AGENT_BROWSER_PROXY_BYPASS)
                              e.g., --proxy-bypass "localhost,*.internal.com"
   --ignore-https-errors      Ignore HTTPS certificate errors
-  -p, --provider <name>      Cloud browser provider (or AGENT_BROWSER_PROVIDER env)
+  -p, --provider <name>      Browser provider: ios, browserbase, kernel, browseruse
+  --device <name>            iOS device name (e.g., "iPhone 15 Pro")
   --json                     JSON output
   --full, -f                 Full page screenshot
   --headed                   Show browser window (not headless)
@@ -1671,8 +1734,10 @@ Options:
 Environment:
   AGENT_BROWSER_SESSION          Session name (default: "default")
   AGENT_BROWSER_EXECUTABLE_PATH  Custom browser executable path
-  AGENT_BROWSER_PROVIDER         Cloud browser provider
+  AGENT_BROWSER_PROVIDER         Browser provider (ios, browserbase, kernel, browseruse)
   AGENT_BROWSER_STREAM_PORT      Enable WebSocket streaming on port (e.g., 9223)
+  AGENT_BROWSER_IOS_DEVICE       Default iOS device name
+  AGENT_BROWSER_IOS_UDID         Default iOS device UDID
 
 Examples:
   agent-browser open example.com
@@ -1684,6 +1749,13 @@ Examples:
   agent-browser screenshot --full
   agent-browser --cdp 9222 snapshot      # Connect via CDP port
   agent-browser --profile ~/.myapp open example.com  # Persistent profile
+
+iOS Simulator (requires Xcode and Appium):
+  agent-browser -p ios open example.com                    # Use default iPhone
+  agent-browser -p ios --device "iPhone 15 Pro" open url   # Specific device
+  agent-browser -p ios device list                         # List simulators
+  agent-browser -p ios swipe up                            # Swipe gesture
+  agent-browser -p ios tap @e1                             # Touch element
 "#
     );
 }

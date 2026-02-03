@@ -835,6 +835,48 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
             }
         }
 
+        // === iOS-specific commands ===
+        "tap" => {
+            // Alias for click (semantic clarity for touch interfaces)
+            let sel = rest.get(0).ok_or_else(|| ParseError::MissingArguments {
+                context: "tap".to_string(),
+                usage: "tap <selector>",
+            })?;
+            Ok(json!({ "id": id, "action": "tap", "selector": sel }))
+        }
+        "swipe" => {
+            let direction = rest.get(0).ok_or_else(|| ParseError::MissingArguments {
+                context: "swipe".to_string(),
+                usage: "swipe <up|down|left|right> [distance]",
+            })?;
+            let valid_directions = ["up", "down", "left", "right"];
+            if !valid_directions.contains(direction) {
+                return Err(ParseError::InvalidValue {
+                    message: format!("Invalid swipe direction: {}", direction),
+                    usage: "swipe <up|down|left|right> [distance]",
+                });
+            }
+            let mut cmd = json!({ "id": id, "action": "swipe", "direction": direction });
+            if let Some(distance) = rest.get(1) {
+                if let Ok(d) = distance.parse::<u32>() {
+                    cmd.as_object_mut().unwrap().insert("distance".to_string(), json!(d));
+                }
+            }
+            Ok(cmd)
+        }
+        "device" => {
+            match rest.get(0).map(|s| *s) {
+                Some("list") | None => {
+                    // List available iOS simulators
+                    Ok(json!({ "id": id, "action": "device_list" }))
+                }
+                Some(sub) => Err(ParseError::UnknownSubcommand {
+                    subcommand: sub.to_string(),
+                    valid_options: &["list"],
+                }),
+            }
+        }
+
         _ => Err(ParseError::UnknownCommand {
             command: cmd.to_string(),
         }),
@@ -1376,6 +1418,7 @@ mod tests {
             user_agent: None,
             provider: None,
             ignore_https_errors: false,
+            device: None,
         }
     }
 
