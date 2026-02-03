@@ -691,6 +691,59 @@ Core workflow:
 
 ## Integrations
 
+### iOS Simulator
+
+Control real Mobile Safari in the iOS Simulator for authentic mobile web testing. Requires macOS with Xcode.
+
+**Setup:**
+
+```bash
+# Install Appium and XCUITest driver
+npm install -g appium
+appium driver install xcuitest
+```
+
+**Usage:**
+
+```bash
+# List available iOS simulators
+agent-browser device list
+
+# Launch Safari on a specific device
+agent-browser -p ios --device "iPhone 16 Pro" open https://example.com
+
+# Same commands as desktop
+agent-browser -p ios snapshot -i
+agent-browser -p ios tap @e1
+agent-browser -p ios fill @e2 "text"
+agent-browser -p ios screenshot mobile.png
+
+# Mobile-specific commands
+agent-browser -p ios swipe up
+agent-browser -p ios swipe down 500
+
+# Close session
+agent-browser -p ios close
+```
+
+Or use environment variables:
+
+```bash
+export AGENT_BROWSER_PROVIDER=ios
+export AGENT_BROWSER_IOS_DEVICE="iPhone 16 Pro"
+agent-browser open https://example.com
+```
+
+| Variable | Description |
+|----------|-------------|
+| `AGENT_BROWSER_PROVIDER` | Set to `ios` to enable iOS mode |
+| `AGENT_BROWSER_IOS_DEVICE` | Device name (e.g., "iPhone 16 Pro", "iPad Pro") |
+| `AGENT_BROWSER_IOS_UDID` | Device UDID (alternative to device name) |
+
+**Supported devices:** All iOS Simulators available in Xcode (iPhones, iPads)
+
+**Note:** The iOS provider boots the simulator, starts Appium, and controls Safari. First launch takes ~30-60 seconds; subsequent commands are fast.
+
 ### Browserbase
 
 [Browserbase](https://browserbase.com) provides remote browser infrastructure to make deployment of agentic browsing agents easy. Use it when running the agent-browser CLI in an environment where a local browser isn't feasible.
