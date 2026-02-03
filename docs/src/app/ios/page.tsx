@@ -133,6 +133,71 @@ agent-browser tap @e1`}
           <li>All iPad models (iPad Pro, iPad Air, iPad mini, etc.)</li>
           <li>Multiple iOS versions (17.x, 18.x, etc.)</li>
         </ul>
+        <p>
+          <strong>Real devices</strong> are also supported via USB connection
+          (see below).
+        </p>
+
+        <h2>Real device support</h2>
+        <p>
+          Appium can control Safari on real iOS devices connected via USB. This
+          requires additional one-time setup.
+        </p>
+
+        <h3>1. Get your device UDID</h3>
+        <CodeBlock
+          code={`# List connected devices
+xcrun xctrace list devices
+
+# Or via system profiler
+system_profiler SPUSBDataType | grep -A 5 "iPhone\\|iPad"`}
+        />
+
+        <h3>2. Sign WebDriverAgent (one-time)</h3>
+        <p>
+          WebDriverAgent needs to be signed with your Apple Developer
+          certificate to run on real devices.
+        </p>
+        <CodeBlock
+          code={`# Open the WebDriverAgent Xcode project
+cd ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent
+open WebDriverAgent.xcodeproj`}
+        />
+        <p>In Xcode:</p>
+        <ol>
+          <li>
+            Select the <code>WebDriverAgentRunner</code> target
+          </li>
+          <li>Go to Signing &amp; Capabilities</li>
+          <li>
+            Select your Team (requires Apple Developer account, free tier works)
+          </li>
+          <li>Let Xcode manage signing automatically</li>
+        </ol>
+
+        <h3>3. Use with agent-browser</h3>
+        <CodeBlock
+          code={`# Connect device via USB, then use the UDID
+agent-browser -p ios --device "<DEVICE_UDID>" open https://example.com
+
+# Or use the device name if unique
+agent-browser -p ios --device "John's iPhone" open https://example.com`}
+        />
+
+        <h3>Real device notes</h3>
+        <ul>
+          <li>
+            First run installs WebDriverAgent to the device (may require Trust
+            prompt on device)
+          </li>
+          <li>Device must be unlocked and connected via USB</li>
+          <li>Slightly slower initial connection than simulator</li>
+          <li>Tests against real Safari performance and behavior</li>
+          <li>
+            On first install, go to Settings &rarr; General &rarr; VPN &amp;
+            Device Management to trust the developer certificate
+          </li>
+        </ul>
 
         <h2>Performance notes</h2>
         <ul>

@@ -151,7 +151,9 @@ agent-browser -p ios screenshot mobile.png
 agent-browser -p ios close
 ```
 
-**Requirements:** Xcode with iOS Simulator, Appium (`npm install -g appium && appium driver install xcuitest`)
+**Requirements:** macOS with Xcode, Appium (`npm install -g appium && appium driver install xcuitest`)
+
+**Real devices:** Works with physical iOS devices if pre-configured. Use `--device "<UDID>"` where UDID is from `xcrun xctrace list devices`.
 
 ## Ref Lifecycle (Important)
 
