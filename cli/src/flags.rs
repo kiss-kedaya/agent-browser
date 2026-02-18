@@ -79,6 +79,20 @@ fn read_config_file(path: &Path) -> Option<Config> {
     }
 }
 
+/// Parse an optional boolean value after a flag. Returns (value, consumed_next_arg).
+/// Recognizes "true"/"1" as true, "false"/"0" as false. Bare flag defaults to true.
+fn parse_bool_arg(args: &[String], i: usize) -> (bool, bool) {
+    if let Some(v) = args.get(i + 1) {
+        match v.as_str() {
+            "true" => (true, true),
+            "false" => (false, true),
+            _ => (true, false),
+        }
+    } else {
+        (true, false)
+    }
+}
+
 /// Extract --config <path> from args before full flag parsing
 fn extract_config_path(args: &[String]) -> Option<String> {
     let mut i = 0;
@@ -226,10 +240,22 @@ pub fn parse_flags(args: &[String]) -> Flags {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--json" => flags.json = true,
+            "--json" => {
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.json = val;
+                if consumed { i += 1; }
+            }
             "--full" | "-f" => flags.full = true,
-            "--headed" => flags.headed = true,
-            "--debug" => flags.debug = true,
+            "--headed" => {
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.headed = val;
+                if consumed { i += 1; }
+            }
+            "--debug" => {
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.debug = val;
+                if consumed { i += 1; }
+            }
             "--session" => {
                 if let Some(s) = args.get(i + 1) {
                     flags.session = s.clone();
@@ -310,10 +336,16 @@ pub fn parse_flags(args: &[String]) -> Flags {
                     i += 1;
                 }
             }
-            "--ignore-https-errors" => flags.ignore_https_errors = true,
+            "--ignore-https-errors" => {
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.ignore_https_errors = val;
+                if consumed { i += 1; }
+            }
             "--allow-file-access" => {
-                flags.allow_file_access = true;
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.allow_file_access = val;
                 flags.cli_allow_file_access = true;
+                if consumed { i += 1; }
             }
             "--device" => {
                 if let Some(d) = args.get(i + 1) {
@@ -321,13 +353,11 @@ pub fn parse_flags(args: &[String]) -> Flags {
                     i += 1;
                 }
             }
-            "--auto-connect" => flags.auto_connect = true,
-            "--no-headed" => flags.headed = false,
-            "--no-debug" => flags.debug = false,
-            "--no-json" => flags.json = false,
-            "--no-ignore-https-errors" => flags.ignore_https_errors = false,
-            "--no-allow-file-access" => flags.allow_file_access = false,
-            "--no-auto-connect" => flags.auto_connect = false,
+            "--auto-connect" => {
+                let (val, consumed) = parse_bool_arg(args, i);
+                flags.auto_connect = val;
+                if consumed { i += 1; }
+            }
             "--session-name" => {
                 if let Some(s) = args.get(i + 1) {
                     flags.session_name = Some(s.clone());
@@ -349,23 +379,17 @@ pub fn clean_args(args: &[String]) -> Vec<String> {
     let mut result = Vec::new();
     let mut skip_next = false;
 
-    // Global flags that should be stripped from command args
-    const GLOBAL_FLAGS: &[&str] = &[
+    const GLOBAL_FLAGS: &[&str] = &["--full"];
+    // Boolean flags that optionally take true/false/1/0
+    const GLOBAL_BOOL_FLAGS: &[&str] = &[
         "--json",
-        "--full",
         "--headed",
         "--debug",
         "--ignore-https-errors",
         "--allow-file-access",
         "--auto-connect",
-        "--no-headed",
-        "--no-debug",
-        "--no-json",
-        "--no-ignore-https-errors",
-        "--no-allow-file-access",
-        "--no-auto-connect",
     ];
-    // Global flags that take a value (need to skip the next arg too)
+    // Global flags that always take a value (need to skip the next arg too)
     const GLOBAL_FLAGS_WITH_VALUE: &[&str] = &[
         "--session",
         "--headers",
@@ -385,20 +409,34 @@ pub fn clean_args(args: &[String]) -> Vec<String> {
         "--config",
     ];
 
-    for arg in args.iter() {
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
         if skip_next {
             skip_next = false;
+            i += 1;
             continue;
         }
         if GLOBAL_FLAGS_WITH_VALUE.contains(&arg.as_str()) {
             skip_next = true;
+            i += 1;
             continue;
         }
-        // Only strip known global flags, not command-specific flags
+        if GLOBAL_BOOL_FLAGS.contains(&arg.as_str()) {
+            if let Some(v) = args.get(i + 1) {
+                if matches!(v.as_str(), "true" | "false") {
+                    i += 1;
+                }
+            }
+            i += 1;
+            continue;
+        }
         if GLOBAL_FLAGS.contains(&arg.as_str()) || arg == "-f" {
+            i += 1;
             continue;
         }
         result.push(arg.clone());
+        i += 1;
     }
     result
 }
@@ -755,47 +793,66 @@ mod tests {
         let _ = fs::remove_dir(&dir);
     }
 
-    // === Negation flag tests ===
+    // === Boolean flag value tests ===
 
     #[test]
-    fn test_no_headed_flag() {
-        let flags = parse_flags(&args("--headed --no-headed open example.com"));
+    fn test_headed_false() {
+        let flags = parse_flags(&args("--headed false open example.com"));
         assert!(!flags.headed);
     }
 
     #[test]
-    fn test_no_debug_flag() {
-        let flags = parse_flags(&args("--debug --no-debug open example.com"));
+    fn test_headed_true_explicit() {
+        let flags = parse_flags(&args("--headed true open example.com"));
+        assert!(flags.headed);
+    }
+
+    #[test]
+    fn test_headed_bare_defaults_true() {
+        let flags = parse_flags(&args("--headed open example.com"));
+        assert!(flags.headed);
+    }
+
+    #[test]
+    fn test_debug_false() {
+        let flags = parse_flags(&args("--debug false open example.com"));
         assert!(!flags.debug);
     }
 
     #[test]
-    fn test_no_json_flag() {
-        let flags = parse_flags(&args("--json --no-json open example.com"));
+    fn test_json_false() {
+        let flags = parse_flags(&args("--json false open example.com"));
         assert!(!flags.json);
     }
 
     #[test]
-    fn test_no_ignore_https_errors_flag() {
-        let flags = parse_flags(&args("--ignore-https-errors --no-ignore-https-errors open"));
+    fn test_ignore_https_errors_false() {
+        let flags = parse_flags(&args("--ignore-https-errors false open"));
         assert!(!flags.ignore_https_errors);
     }
 
     #[test]
-    fn test_no_allow_file_access_flag() {
-        let flags = parse_flags(&args("--allow-file-access --no-allow-file-access open"));
+    fn test_allow_file_access_false() {
+        let flags = parse_flags(&args("--allow-file-access false open"));
         assert!(!flags.allow_file_access);
+        assert!(flags.cli_allow_file_access);
     }
 
     #[test]
-    fn test_no_auto_connect_flag() {
-        let flags = parse_flags(&args("--auto-connect --no-auto-connect open"));
+    fn test_auto_connect_false() {
+        let flags = parse_flags(&args("--auto-connect false open"));
         assert!(!flags.auto_connect);
     }
 
     #[test]
-    fn test_clean_args_removes_no_flags() {
-        let cleaned = clean_args(&args("--no-headed --no-debug open example.com"));
+    fn test_clean_args_removes_bool_flag_with_value() {
+        let cleaned = clean_args(&args("--headed false --debug true open example.com"));
+        assert_eq!(cleaned, vec!["open", "example.com"]);
+    }
+
+    #[test]
+    fn test_clean_args_removes_bare_bool_flag() {
+        let cleaned = clean_args(&args("--headed --debug open example.com"));
         assert_eq!(cleaned, vec!["open", "example.com"]);
     }
 

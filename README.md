@@ -424,7 +424,6 @@ The `-C` flag is useful for modern web apps that use custom clickable elements (
 | `--cdp <port\|url>` | Connect via Chrome DevTools Protocol (port or WebSocket URL) |
 | `--auto-connect` | Auto-discover and connect to running Chrome (or `AGENT_BROWSER_AUTO_CONNECT` env) |
 | `--config <path>` | Use a custom config file instead of default locations |
-| `--no-<flag>` | Negate a boolean config option (e.g., `--no-headed`, `--no-debug`) |
 | `--debug` | Debug output |
 
 ## Configuration
@@ -458,7 +457,7 @@ agent-browser --config ./ci-config.json open example.com
 
 All options from the table above can be set in the config file using camelCase keys (e.g., `--executable-path` becomes `"executablePath"`, `--proxy-bypass` becomes `"proxyBypass"`). Unknown keys are ignored for forward compatibility.
 
-Use `--no-<flag>` to override a boolean set in config (e.g., `--no-headed` disables `"headed": true`). Supported: `--no-headed`, `--no-debug`, `--no-json`, `--no-ignore-https-errors`, `--no-allow-file-access`, `--no-auto-connect`.
+Boolean flags accept an optional `true`/`false` value to override config settings. For example, `--headed false` disables `"headed": true` from config. A bare `--headed` is equivalent to `--headed true`.
 
 Auto-discovered config files that are missing are silently ignored. If `--config <path>` points to a missing or invalid file, agent-browser exits with an error. Extensions from user and project configs are merged (concatenated), not replaced.
 

@@ -101,15 +101,22 @@ Every CLI flag can be set in the config file using its camelCase equivalent:
 }
 ```
 
-## Negating Boolean Options
+## Overriding Boolean Options
 
-If a config file sets a boolean like `"headed": true`, you can override it for a single invocation with `--no-<flag>`:
+Boolean flags accept an optional `true`/`false` value to override config settings:
 
 ```bash
-agent-browser --no-headed open example.com
+agent-browser --headed false open example.com
 ```
 
-Supported negation flags: `--no-headed`, `--no-debug`, `--no-json`, `--no-ignore-https-errors`, `--no-allow-file-access`, `--no-auto-connect`.
+A bare flag is equivalent to passing `true`:
+
+```bash
+agent-browser --headed open example.com       # same as --headed true
+agent-browser --headed true open example.com  # explicit
+```
+
+This applies to all boolean flags: `--headed`, `--debug`, `--json`, `--ignore-https-errors`, `--allow-file-access`, `--auto-connect`.
 
 ## Extensions Merging
 
