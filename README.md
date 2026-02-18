@@ -4,10 +4,47 @@ Headless browser automation CLI for AI agents. Fast Rust CLI with Node.js fallba
 
 ## Installation
 
-### npm (recommended)
+### Global Installation (recommended)
+
+Installs the native Rust binary for maximum performance:
 
 ```bash
 npm install -g agent-browser
+agent-browser install  # Download Chromium
+```
+
+This is the fastest option -- commands run through the native Rust CLI directly with sub-millisecond parsing overhead.
+
+### Quick Start (no install)
+
+Run directly with `npx` if you want to try it without installing globally:
+
+```bash
+npx agent-browser install   # Download Chromium (first time only)
+npx agent-browser open example.com
+```
+
+> **Note:** `npx` routes through Node.js before reaching the Rust CLI, so it is noticeably slower than a global install. For regular use, install globally.
+
+### Project Installation (local dependency)
+
+For projects that want to pin the version in `package.json`:
+
+```bash
+npm install agent-browser
+npx agent-browser install
+```
+
+Then use via `npx` or `package.json` scripts:
+
+```bash
+npx agent-browser open example.com
+```
+
+### Homebrew (macOS)
+
+```bash
+brew install agent-browser
 agent-browser install  # Download Chromium
 ```
 
@@ -58,7 +95,7 @@ agent-browser find role button click --name "Submit"
 
 ```bash
 agent-browser open <url>              # Navigate to URL (aliases: goto, navigate)
-agent-browser click <sel>             # Click element
+agent-browser click <sel>             # Click element (--new-tab to open in new tab)
 agent-browser dblclick <sel>          # Double-click element
 agent-browser focus <sel>             # Focus element
 agent-browser type <sel> <text>       # Type into element
@@ -77,7 +114,7 @@ agent-browser upload <sel> <files>    # Upload files
 agent-browser screenshot [path]       # Take screenshot (--full for full page, saves to a temporary directory if no path)
 agent-browser pdf <path>              # Save as PDF
 agent-browser snapshot                # Accessibility tree with refs (best for AI)
-agent-browser eval <js>               # Run JavaScript
+agent-browser eval <js>               # Run JavaScript (-b for base64, --stdin for piped input)
 agent-browser connect <port>          # Connect to browser via CDP
 agent-browser close                   # Close browser (aliases: quit, exit)
 ```
@@ -93,6 +130,7 @@ agent-browser get title               # Get page title
 agent-browser get url                 # Get current URL
 agent-browser get count <sel>         # Count matching elements
 agent-browser get box <sel>           # Get bounding box
+agent-browser get styles <sel>        # Get computed styles
 ```
 
 ### Check State
@@ -118,7 +156,9 @@ agent-browser find last <sel> <action> [value]        # Last match
 agent-browser find nth <n> <sel> <action> [value]     # Nth match
 ```
 
-**Actions:** `click`, `fill`, `check`, `hover`, `text`
+**Actions:** `click`, `fill`, `type`, `hover`, `focus`, `check`, `uncheck`, `text`
+
+**Options:** `--name <name>` (filter role by accessible name), `--exact` (require exact text match)
 
 **Examples:**
 ```bash
@@ -225,6 +265,12 @@ agent-browser errors --clear          # Clear errors
 agent-browser highlight <sel>         # Highlight element
 agent-browser state save <path>       # Save auth state
 agent-browser state load <path>       # Load auth state
+agent-browser state list              # List saved state files
+agent-browser state show <file>       # Show state summary
+agent-browser state rename <old> <new> # Rename state file
+agent-browser state clear [name]      # Clear states for session
+agent-browser state clear --all       # Clear all saved states
+agent-browser state clean --older-than <days>  # Delete old states
 ```
 
 ### Navigation
@@ -295,6 +341,40 @@ The profile directory stores:
 
 **Tip**: Use different profile paths for different projects to keep their browser state isolated.
 
+## Session Persistence
+
+Alternatively, use `--session-name` to automatically save and restore cookies and localStorage across browser restarts:
+
+```bash
+# Auto-save/load state for "twitter" session
+agent-browser --session-name twitter open twitter.com
+
+# Login once, then state persists automatically
+# State files stored in ~/.agent-browser/sessions/
+
+# Or via environment variable
+export AGENT_BROWSER_SESSION_NAME=twitter
+agent-browser open twitter.com
+```
+
+### State Encryption
+
+Encrypt saved session data at rest with AES-256-GCM:
+
+```bash
+# Generate key: openssl rand -hex 32
+export AGENT_BROWSER_ENCRYPTION_KEY=<64-char-hex-key>
+
+# State files are now encrypted automatically
+agent-browser --session-name secure open example.com
+```
+
+| Variable | Description |
+|----------|-------------|
+| `AGENT_BROWSER_SESSION_NAME` | Auto-save/load state persistence name |
+| `AGENT_BROWSER_ENCRYPTION_KEY` | 64-char hex key for AES-256-GCM encryption |
+| `AGENT_BROWSER_STATE_EXPIRE_DAYS` | Auto-delete states older than N days (default: 30) |
+
 ## Snapshot Options
 
 The `snapshot` command supports filtering to reduce output size:
@@ -302,6 +382,7 @@ The `snapshot` command supports filtering to reduce output size:
 ```bash
 agent-browser snapshot                    # Full accessibility tree
 agent-browser snapshot -i                 # Interactive elements only (buttons, inputs, links)
+agent-browser snapshot -i -C              # Include cursor-interactive elements (divs with onclick, etc.)
 agent-browser snapshot -c                 # Compact (remove empty structural elements)
 agent-browser snapshot -d 3               # Limit depth to 3 levels
 agent-browser snapshot -s "#main"         # Scope to CSS selector
@@ -311,31 +392,77 @@ agent-browser snapshot -i -c -d 5         # Combine options
 | Option | Description |
 |--------|-------------|
 | `-i, --interactive` | Only show interactive elements (buttons, links, inputs) |
+| `-C, --cursor` | Include cursor-interactive elements (cursor:pointer, onclick, tabindex) |
 | `-c, --compact` | Remove empty structural elements |
 | `-d, --depth <n>` | Limit tree depth |
 | `-s, --selector <sel>` | Scope to CSS selector |
+
+The `-C` flag is useful for modern web apps that use custom clickable elements (divs, spans) instead of standard buttons/links.
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
 | `--session <name>` | Use isolated session (or `AGENT_BROWSER_SESSION` env) |
+| `--session-name <name>` | Auto-save/restore session state (or `AGENT_BROWSER_SESSION_NAME` env) |
 | `--profile <path>` | Persistent browser profile directory (or `AGENT_BROWSER_PROFILE` env) |
+| `--state <path>` | Load storage state from JSON file (or `AGENT_BROWSER_STATE` env) |
 | `--headers <json>` | Set HTTP headers scoped to the URL's origin |
 | `--executable-path <path>` | Custom browser executable (or `AGENT_BROWSER_EXECUTABLE_PATH` env) |
+| `--extension <path>` | Load browser extension (repeatable; or `AGENT_BROWSER_EXTENSIONS` env) |
 | `--args <args>` | Browser launch args, comma or newline separated (or `AGENT_BROWSER_ARGS` env) |
 | `--user-agent <ua>` | Custom User-Agent string (or `AGENT_BROWSER_USER_AGENT` env) |
 | `--proxy <url>` | Proxy server URL with optional auth (or `AGENT_BROWSER_PROXY` env) |
 | `--proxy-bypass <hosts>` | Hosts to bypass proxy (or `AGENT_BROWSER_PROXY_BYPASS` env) |
+| `--ignore-https-errors` | Ignore HTTPS certificate errors (useful for self-signed certs) |
+| `--allow-file-access` | Allow file:// URLs to access local files (Chromium only) |
 | `-p, --provider <name>` | Cloud browser provider (or `AGENT_BROWSER_PROVIDER` env) |
+| `--device <name>` | iOS device name, e.g. "iPhone 15 Pro" (or `AGENT_BROWSER_IOS_DEVICE` env) |
 | `--json` | JSON output (for agents) |
 | `--full, -f` | Full page screenshot |
-| `--name, -n` | Locator name filter |
-| `--exact` | Exact text match |
 | `--headed` | Show browser window (not headless) |
-| `--cdp <port>` | Connect via Chrome DevTools Protocol |
-| `--ignore-https-errors` | Ignore HTTPS certificate errors (useful for self-signed certs) |
+| `--cdp <port\|url>` | Connect via Chrome DevTools Protocol (port or WebSocket URL) |
+| `--auto-connect` | Auto-discover and connect to running Chrome (or `AGENT_BROWSER_AUTO_CONNECT` env) |
+| `--config <path>` | Use a custom config file (or `AGENT_BROWSER_CONFIG` env) |
 | `--debug` | Debug output |
+
+## Configuration
+
+Create an `agent-browser.json` file to set persistent defaults instead of repeating flags on every command.
+
+**Locations (lowest to highest priority):**
+
+1. `~/.agent-browser/config.json` -- user-level defaults
+2. `./agent-browser.json` -- project-level overrides (in working directory)
+3. `AGENT_BROWSER_*` environment variables override config file values
+4. CLI flags override everything
+
+**Example `agent-browser.json`:**
+
+```json
+{
+  "headed": true,
+  "proxy": "http://localhost:8080",
+  "profile": "./browser-data",
+  "userAgent": "my-agent/1.0",
+  "ignoreHttpsErrors": true
+}
+```
+
+Use `--config <path>` or `AGENT_BROWSER_CONFIG` to load a specific config file instead of the defaults:
+
+```bash
+agent-browser --config ./ci-config.json open example.com
+AGENT_BROWSER_CONFIG=./ci-config.json agent-browser open example.com
+```
+
+All options from the table above can be set in the config file using camelCase keys (e.g., `--executable-path` becomes `"executablePath"`, `--proxy-bypass` becomes `"proxyBypass"`). Unknown keys are ignored for forward compatibility.
+
+Boolean flags accept an optional `true`/`false` value to override config settings. For example, `--headed false` disables `"headed": true` from config. A bare `--headed` is equivalent to `--headed true`.
+
+Auto-discovered config files that are missing are silently ignored. If `--config <path>` points to a missing or invalid file, agent-browser exits with an error. Extensions from user and project configs are merged (concatenated), not replaced.
+
+> **Tip:** If your project-level `agent-browser.json` contains environment-specific values (paths, proxies), consider adding it to `.gitignore`.
 
 ## Selectors
 
@@ -492,6 +619,27 @@ export async function handler() {
 }
 ```
 
+## Local Files
+
+Open and interact with local files (PDFs, HTML, etc.) using `file://` URLs:
+
+```bash
+# Enable file access (required for JavaScript to access local files)
+agent-browser --allow-file-access open file:///path/to/document.pdf
+agent-browser --allow-file-access open file:///path/to/page.html
+
+# Take screenshot of a local PDF
+agent-browser --allow-file-access open file:///Users/me/report.pdf
+agent-browser screenshot report.png
+```
+
+The `--allow-file-access` flag adds Chromium flags (`--allow-file-access-from-files`, `--allow-file-access`) that allow `file://` URLs to:
+- Load and render local files
+- Access other local files via JavaScript (XHR, fetch)
+- Load local resources (images, scripts, stylesheets)
+
+**Note:** This flag only works with Chromium. For security, it's disabled by default.
+
 ## CDP Mode
 
 Connect to an existing browser via Chrome DevTools Protocol:
@@ -521,6 +669,28 @@ This enables control of:
 - Chrome/Chromium instances with remote debugging
 - WebView2 applications
 - Any browser exposing a CDP endpoint
+
+### Auto-Connect
+
+Use `--auto-connect` to automatically discover and connect to a running Chrome instance without specifying a port:
+
+```bash
+# Auto-discover running Chrome with remote debugging
+agent-browser --auto-connect open example.com
+agent-browser --auto-connect snapshot
+
+# Or via environment variable
+AGENT_BROWSER_AUTO_CONNECT=1 agent-browser snapshot
+```
+
+Auto-connect discovers Chrome by:
+1. Reading Chrome's `DevToolsActivePort` file from the default user data directory
+2. Falling back to probing common debugging ports (9222, 9229)
+
+This is useful when:
+- Chrome 144+ has remote debugging enabled via `chrome://inspect/#remote-debugging` (which uses a dynamic port)
+- You want a zero-configuration connection to your existing browser
+- You don't want to track which port Chrome is using
 
 ## Streaming (Browser Preview)
 
@@ -655,7 +825,7 @@ The daemon starts automatically on first command and persists between commands f
 
 ### Just ask the agent
 
-The simplest approach - just tell your agent to use it:
+The simplest approach -- just tell your agent to use it:
 
 ```
 Use agent-browser to test the login flow. Run agent-browser --help to see available commands.
@@ -663,7 +833,7 @@ Use agent-browser to test the login flow. Run agent-browser --help to see availa
 
 The `--help` output is comprehensive and most agents can figure it out from there.
 
-### AI Coding Assistants
+### AI Coding Assistants (recommended)
 
 Add the skill to your AI coding assistant for richer context:
 
@@ -671,7 +841,17 @@ Add the skill to your AI coding assistant for richer context:
 npx skills add vercel-labs/agent-browser
 ```
 
-This works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, Goose, OpenCode, and Windsurf.
+This works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, Goose, OpenCode, and Windsurf. The skill is fetched from the repository, so it stays up to date automatically -- do not copy `SKILL.md` from `node_modules` as it will become stale.
+
+### Claude Code
+
+Install as a Claude Code skill:
+
+```bash
+npx skills add vercel-labs/agent-browser
+```
+
+This adds the skill to `.claude/skills/agent-browser/SKILL.md` in your project. The skill teaches Claude Code the full agent-browser workflow, including the snapshot-ref interaction pattern, session management, and timeout handling.
 
 ### AGENTS.md / CLAUDE.md
 
@@ -690,6 +870,98 @@ Core workflow:
 ```
 
 ## Integrations
+
+### iOS Simulator
+
+Control real Mobile Safari in the iOS Simulator for authentic mobile web testing. Requires macOS with Xcode.
+
+**Setup:**
+
+```bash
+# Install Appium and XCUITest driver
+npm install -g appium
+appium driver install xcuitest
+```
+
+**Usage:**
+
+```bash
+# List available iOS simulators
+agent-browser device list
+
+# Launch Safari on a specific device
+agent-browser -p ios --device "iPhone 16 Pro" open https://example.com
+
+# Same commands as desktop
+agent-browser -p ios snapshot -i
+agent-browser -p ios tap @e1
+agent-browser -p ios fill @e2 "text"
+agent-browser -p ios screenshot mobile.png
+
+# Mobile-specific commands
+agent-browser -p ios swipe up
+agent-browser -p ios swipe down 500
+
+# Close session
+agent-browser -p ios close
+```
+
+Or use environment variables:
+
+```bash
+export AGENT_BROWSER_PROVIDER=ios
+export AGENT_BROWSER_IOS_DEVICE="iPhone 16 Pro"
+agent-browser open https://example.com
+```
+
+| Variable | Description |
+|----------|-------------|
+| `AGENT_BROWSER_PROVIDER` | Set to `ios` to enable iOS mode |
+| `AGENT_BROWSER_IOS_DEVICE` | Device name (e.g., "iPhone 16 Pro", "iPad Pro") |
+| `AGENT_BROWSER_IOS_UDID` | Device UDID (alternative to device name) |
+
+**Supported devices:** All iOS Simulators available in Xcode (iPhones, iPads), plus real iOS devices.
+
+**Note:** The iOS provider boots the simulator, starts Appium, and controls Safari. First launch takes ~30-60 seconds; subsequent commands are fast.
+
+#### Real Device Support
+
+Appium also supports real iOS devices connected via USB. This requires additional one-time setup:
+
+**1. Get your device UDID:**
+```bash
+xcrun xctrace list devices
+# or
+system_profiler SPUSBDataType | grep -A 5 "iPhone\|iPad"
+```
+
+**2. Sign WebDriverAgent (one-time):**
+```bash
+# Open the WebDriverAgent Xcode project
+cd ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent
+open WebDriverAgent.xcodeproj
+```
+
+In Xcode:
+- Select the `WebDriverAgentRunner` target
+- Go to Signing & Capabilities
+- Select your Team (requires Apple Developer account, free tier works)
+- Let Xcode manage signing automatically
+
+**3. Use with agent-browser:**
+```bash
+# Connect device via USB, then:
+agent-browser -p ios --device "<DEVICE_UDID>" open https://example.com
+
+# Or use the device name if unique
+agent-browser -p ios --device "John's iPhone" open https://example.com
+```
+
+**Real device notes:**
+- First run installs WebDriverAgent to the device (may require Trust prompt)
+- Device must be unlocked and connected via USB
+- Slightly slower initial connection than simulator
+- Tests against real Safari performance and behavior
 
 ### Browserbase
 

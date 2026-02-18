@@ -364,6 +364,23 @@ describe('parseCommand', () => {
       expect(result.success).toBe(true);
     });
 
+    it('should parse getbyrole with exact', () => {
+      const result = parseCommand(
+        cmd({
+          id: '1',
+          action: 'getbyrole',
+          role: 'button',
+          name: 'Continue',
+          subaction: 'click',
+          exact: true,
+        })
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.exact).toBe(true);
+      }
+    });
+
     it('should parse getbytext', () => {
       const result = parseCommand(
         cmd({
@@ -387,6 +404,40 @@ describe('parseCommand', () => {
         })
       );
       expect(result.success).toBe(true);
+    });
+
+    it('should parse getbylabel with exact', () => {
+      const result = parseCommand(
+        cmd({
+          id: '1',
+          action: 'getbylabel',
+          label: 'Email',
+          subaction: 'fill',
+          value: 'test@test.com',
+          exact: true,
+        })
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.exact).toBe(true);
+      }
+    });
+
+    it('should parse getbyplaceholder with exact', () => {
+      const result = parseCommand(
+        cmd({
+          id: '1',
+          action: 'getbyplaceholder',
+          placeholder: 'Search',
+          subaction: 'fill',
+          value: 'test',
+          exact: true,
+        })
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.exact).toBe(true);
+      }
     });
   });
 
@@ -531,6 +582,47 @@ describe('parseCommand', () => {
       const result = parseCommand(cmd({ id: '1', action: 'launch', ignoreHTTPSErrors: 'true' }));
       expect(result.success).toBe(false);
     });
+
+    it('should parse launch with allowFileAccess true', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', allowFileAccess: true }));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.allowFileAccess).toBe(true);
+      }
+    });
+
+    it('should parse launch with allowFileAccess false', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', allowFileAccess: false }));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.allowFileAccess).toBe(false);
+      }
+    });
+
+    it('should parse launch with viewport dimensions', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'launch', viewport: { width: 1920, height: 1080 } })
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.viewport).toEqual({ width: 1920, height: 1080 });
+      }
+    });
+
+    it('should parse launch with viewport null', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', viewport: null }));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.viewport).toBeNull();
+      }
+    });
+
+    it('should reject launch with invalid viewport', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'launch', viewport: { width: -1, height: 720 } })
+      );
+      expect(result.success).toBe(false);
+    });
   });
 
   describe('mouse actions', () => {
@@ -663,6 +755,21 @@ describe('parseCommand', () => {
   describe('frame', () => {
     it('should parse frame command', () => {
       const result = parseCommand(cmd({ id: '1', action: 'frame', selector: '#iframe' }));
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject frame with no selector, name, or url', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'frame' }));
+      expect(result.success).toBe(false);
+    });
+
+    it('should parse frame with name', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'frame', name: 'myframe' }));
+      expect(result.success).toBe(true);
+    });
+
+    it('should parse frame with url', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'frame', url: 'https://example.com' }));
       expect(result.success).toBe(true);
     });
 
@@ -1054,6 +1161,46 @@ describe('parseCommand', () => {
         );
         expect(result.success).toBe(false);
       });
+    });
+  });
+
+  describe('addscript and addstyle', () => {
+    it('should parse addscript with content', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'addscript', content: 'console.log("hi")' })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should parse addscript with url', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'addscript', url: 'https://example.com/script.js' })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject addscript with neither content nor url', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'addscript' }));
+      expect(result.success).toBe(false);
+    });
+
+    it('should parse addstyle with content', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'addstyle', content: 'body { color: red }' })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should parse addstyle with url', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'addstyle', url: 'https://example.com/style.css' })
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject addstyle with neither content nor url', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'addstyle' }));
+      expect(result.success).toBe(false);
     });
   });
 

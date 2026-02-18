@@ -10,12 +10,13 @@ export interface BaseCommand {
 export interface LaunchCommand extends BaseCommand {
   action: 'launch';
   headless?: boolean;
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number } | null;
   browser?: 'chromium' | 'firefox' | 'webkit';
   headers?: Record<string, string>;
   executablePath?: string;
   cdpPort?: number;
   cdpUrl?: string;
+  autoConnect?: boolean; // Auto-discover and connect to running Chrome via DevToolsActivePort
   extensions?: string[];
   profile?: string; // Path to persistent browser profile directory
   storageState?: string; // Path to storage state JSON file
@@ -29,6 +30,9 @@ export interface LaunchCommand extends BaseCommand {
   userAgent?: string;
   provider?: string;
   ignoreHTTPSErrors?: boolean;
+  allowFileAccess?: boolean; // Enable file:// URL access and cross-origin file requests
+  // Auto-load state file for session persistence
+  autoStateFilePath?: string;
 }
 
 export interface NavigateCommand extends BaseCommand {
@@ -44,6 +48,7 @@ export interface ClickCommand extends BaseCommand {
   button?: 'left' | 'right' | 'middle';
   clickCount?: number;
   delay?: number;
+  newTab?: boolean;
 }
 
 export interface TypeCommand extends BaseCommand {
@@ -107,6 +112,7 @@ export interface GetByRoleCommand extends BaseCommand {
   action: 'getbyrole';
   role: string;
   name?: string;
+  exact?: boolean;
   subaction: 'click' | 'fill' | 'check' | 'hover';
   value?: string;
 }
@@ -121,6 +127,7 @@ export interface GetByTextCommand extends BaseCommand {
 export interface GetByLabelCommand extends BaseCommand {
   action: 'getbylabel';
   label: string;
+  exact?: boolean;
   subaction: 'click' | 'fill' | 'check';
   value?: string;
 }
@@ -128,6 +135,7 @@ export interface GetByLabelCommand extends BaseCommand {
 export interface GetByPlaceholderCommand extends BaseCommand {
   action: 'getbyplaceholder';
   placeholder: string;
+  exact?: boolean;
   subaction: 'click' | 'fill';
   value?: string;
 }
@@ -521,6 +529,17 @@ export interface InputTouchCommand extends BaseCommand {
   modifiers?: number;
 }
 
+// iOS-specific commands
+export interface SwipeCommand extends BaseCommand {
+  action: 'swipe';
+  direction: 'up' | 'down' | 'left' | 'right';
+  distance?: number;
+}
+
+export interface DeviceListCommand extends BaseCommand {
+  action: 'device_list';
+}
+
 // Video recording (Playwright native - requires launch-time setup)
 export interface VideoStartCommand extends BaseCommand {
   action: 'video_start';
@@ -557,7 +576,7 @@ export interface TraceStartCommand extends BaseCommand {
 
 export interface TraceStopCommand extends BaseCommand {
   action: 'trace_stop';
-  path: string;
+  path?: string;
 }
 
 // CDP Profiling (Chrome DevTools trace format)
@@ -590,6 +609,33 @@ export interface StorageStateSaveCommand extends BaseCommand {
 export interface StorageStateLoadCommand extends BaseCommand {
   action: 'state_load';
   path: string;
+}
+
+// State management commands (v2)
+export interface StateListCommand extends BaseCommand {
+  action: 'state_list';
+}
+
+export interface StateClearCommand extends BaseCommand {
+  action: 'state_clear';
+  sessionName?: string;
+  all?: boolean;
+}
+
+export interface StateShowCommand extends BaseCommand {
+  action: 'state_show';
+  filename: string;
+}
+
+export interface StateCleanCommand extends BaseCommand {
+  action: 'state_clean';
+  days: number;
+}
+
+export interface StateRenameCommand extends BaseCommand {
+  action: 'state_rename';
+  oldName: string;
+  newName: string;
 }
 
 // Console logs
@@ -815,7 +861,7 @@ export interface TabCloseCommand extends BaseCommand {
 
 export interface WindowNewCommand extends BaseCommand {
   action: 'window_new';
-  viewport?: { width: number; height: number };
+  viewport?: { width: number; height: number } | null;
 }
 
 // Union of all command types
@@ -895,6 +941,11 @@ export type Command =
   | HarStopCommand
   | StorageStateSaveCommand
   | StorageStateLoadCommand
+  | StateListCommand
+  | StateClearCommand
+  | StateShowCommand
+  | StateCleanCommand
+  | StateRenameCommand
   | ConsoleCommand
   | ErrorsCommand
   | KeyboardCommand
@@ -944,7 +995,9 @@ export type Command =
   | ScreencastStopCommand
   | InputMouseCommand
   | InputKeyboardCommand
-  | InputTouchCommand;
+  | InputTouchCommand
+  | SwipeCommand
+  | DeviceListCommand;
 
 // Response types
 export interface SuccessResponse<T = unknown> {

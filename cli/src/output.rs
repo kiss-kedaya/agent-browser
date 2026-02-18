@@ -78,6 +78,70 @@ pub fn print_response(resp: &Response, json_mode: bool, action: Option<&str>) {
             );
             return;
         }
+        // iOS Devices
+        if let Some(devices) = data.get("devices").and_then(|v| v.as_array()) {
+            if devices.is_empty() {
+                println!("No iOS devices available. Open Xcode to download simulator runtimes.");
+                return;
+            }
+
+            // Separate real devices from simulators
+            let real_devices: Vec<_> = devices
+                .iter()
+                .filter(|d| {
+                    d.get("isRealDevice")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
+                .collect();
+            let simulators: Vec<_> = devices
+                .iter()
+                .filter(|d| {
+                    !d.get("isRealDevice")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if !real_devices.is_empty() {
+                println!("Connected Devices:\n");
+                for device in real_devices.iter() {
+                    let name = device
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let runtime = device.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
+                    let udid = device.get("udid").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("  {} {} ({})", color::green("●"), name, runtime);
+                    println!("    {}", color::dim(udid));
+                }
+                println!();
+            }
+
+            if !simulators.is_empty() {
+                println!("Simulators:\n");
+                for device in simulators.iter() {
+                    let name = device
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let runtime = device.get("runtime").and_then(|v| v.as_str()).unwrap_or("");
+                    let state = device
+                        .get("state")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let udid = device.get("udid").and_then(|v| v.as_str()).unwrap_or("");
+                    let state_indicator = if state == "Booted" {
+                        color::green("●")
+                    } else {
+                        color::dim("○")
+                    };
+                    println!("  {} {} ({})", state_indicator, name, runtime);
+                    println!("    {}", color::dim(udid));
+                }
+            }
+            return;
+        }
         // Tabs
         if let Some(tabs) = data.get("tabs").and_then(|v| v.as_array()) {
             for (i, tab) in tabs.iter().enumerate() {
@@ -280,6 +344,11 @@ pub fn print_response(resp: &Response, json_mode: bool, action: Option<&str>) {
                 return;
             }
         }
+        // Trace stop without path
+        if data.get("traceStopped").is_some() {
+            println!("{} Trace stopped", color::success_indicator());
+            return;
+        }
         // Path-based operations (screenshot/pdf/trace/har/download/state/video)
         if let Some(path) = data.get("path").and_then(|v| v.as_str()) {
             match action.unwrap_or("") {
@@ -350,6 +419,64 @@ pub fn print_response(resp: &Response, json_mode: bool, action: Option<&str>) {
                     color::green(path)
                 ),
             }
+            return;
+        }
+
+        // State list
+        if let Some(files) = data.get("files").and_then(|v| v.as_array()) {
+            if let Some(dir) = data.get("directory").and_then(|v| v.as_str()) {
+                println!("{}", color::bold(&format!("Saved states in {}", dir)));
+            }
+            if files.is_empty() {
+                println!("{}", color::dim("  No state files found"));
+            } else {
+                for file in files {
+                    let filename = file.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                    let size = file.get("size").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let modified = file.get("modified").and_then(|v| v.as_str()).unwrap_or("");
+                    let encrypted = file.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let size_str = if size > 1024 {
+                        format!("{:.1}KB", size as f64 / 1024.0)
+                    } else {
+                        format!("{}B", size)
+                    };
+                    let date_str = modified.split('T').next().unwrap_or(modified);
+                    let enc_str = if encrypted { " [encrypted]" } else { "" };
+                    println!("  {} {}", filename, color::dim(&format!("({}, {}){}", size_str, date_str, enc_str)));
+                }
+            }
+            return;
+        }
+
+        // State rename
+        if let Some(true) = data.get("renamed").and_then(|v| v.as_bool()) {
+            let old_name = data.get("oldName").and_then(|v| v.as_str()).unwrap_or("");
+            let new_name = data.get("newName").and_then(|v| v.as_str()).unwrap_or("");
+            println!("{} Renamed {} -> {}", color::success_indicator(), old_name, new_name);
+            return;
+        }
+
+        // State clear
+        if let Some(cleared) = data.get("cleared").and_then(|v| v.as_i64()) {
+            println!("{} Cleared {} state file(s)", color::success_indicator(), cleared);
+            return;
+        }
+
+        // State show summary
+        if let Some(summary) = data.get("summary") {
+            let cookies = summary.get("cookies").and_then(|v| v.as_i64()).unwrap_or(0);
+            let origins = summary.get("origins").and_then(|v| v.as_i64()).unwrap_or(0);
+            let encrypted = data.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false);
+            let enc_str = if encrypted { " (encrypted)" } else { "" };
+            println!("State file summary{}:", enc_str);
+            println!("  Cookies: {}", cookies);
+            println!("  Origins with localStorage: {}", origins);
+            return;
+        }
+
+        // State clean
+        if let Some(cleaned) = data.get("cleaned").and_then(|v| v.as_i64()) {
+            println!("{} Cleaned {} old state file(s)", color::success_indicator(), cleaned);
             return;
         }
 
@@ -449,10 +576,14 @@ Examples:
             r##"
 agent-browser click - Click an element
 
-Usage: agent-browser click <selector>
+Usage: agent-browser click <selector> [--new-tab]
 
 Clicks on the specified element. The selector can be a CSS selector,
 XPath, or an element reference from snapshot (e.g., @e1).
+
+Options:
+  --new-tab            Open link in a new tab instead of navigating current tab
+                       (only works on elements with href attribute)
 
 Global Options:
   --json               Output as JSON
@@ -463,6 +594,7 @@ Examples:
   agent-browser click @e1
   agent-browser click "button.primary"
   agent-browser click "//button[@type='submit']"
+  agent-browser click @e3 --new-tab
 "##
         }
         "dblclick" => {
@@ -867,6 +999,7 @@ Designed for AI agents to understand page structure.
 
 Options:
   -i, --interactive    Only include interactive elements
+  -C, --cursor         Include cursor-interactive elements (cursor:pointer, onclick, tabindex)
   -c, --compact        Remove empty structural elements
   -d, --depth <n>      Limit tree depth
   -s, --selector <sel> Scope snapshot to CSS selector
@@ -878,6 +1011,7 @@ Global Options:
 Examples:
   agent-browser snapshot
   agent-browser snapshot -i
+  agent-browser snapshot -i -C         # Interactive + cursor-interactive elements
   agent-browser snapshot --compact --depth 5
   agent-browser snapshot -s "#main-content"
 "##
@@ -888,9 +1022,13 @@ Examples:
             r##"
 agent-browser eval - Execute JavaScript
 
-Usage: agent-browser eval <script>
+Usage: agent-browser eval [options] <script>
 
 Executes JavaScript code in the browser context and returns the result.
+
+Options:
+  -b, --base64         Decode script from base64 (avoids shell escaping issues)
+  --stdin              Read script from stdin (useful for heredocs/multiline)
 
 Global Options:
   --json               Output as JSON
@@ -900,6 +1038,13 @@ Examples:
   agent-browser eval "document.title"
   agent-browser eval "window.location.href"
   agent-browser eval "document.querySelectorAll('a').length"
+  agent-browser eval -b "ZG9jdW1lbnQudGl0bGU="
+
+  # Read from stdin with heredoc
+  cat <<'EOF' | agent-browser eval --stdin
+  const links = document.querySelectorAll('a');
+  links.length;
+  EOF
 "##
         }
 
@@ -1477,21 +1622,29 @@ Examples:
         // === State ===
         "state" => {
             r##"
-agent-browser state - Save/load browser state
+agent-browser state - Manage browser state
 
-Usage: agent-browser state <operation> <path>
+Usage: agent-browser state <operation> [args]
 
-Save or restore browser state (cookies, localStorage, sessionStorage).
+Save, restore, list, and manage browser state (cookies, localStorage, sessionStorage).
 
 Operations:
-  save <path>          Save current state to file
-  load <path>          Note: State must be loaded at browser launch via --state flag
+  save <path>                        Save current state to file
+  load <path>                        Load state from file
+  list                               List saved state files
+  show <filename>                    Show state summary
+  rename <old-name> <new-name>       Rename state file
+  clear [session-name] [--all]       Clear saved states
+  clean --older-than <days>          Delete expired state files
 
-Applying State:
-  Use --state flag when launching browser to load saved state:
-  agent-browser --state ./auth-state.json open https://example.com
+Automatic State Persistence:
+  Use --session-name to auto-save/restore state across restarts:
+  agent-browser --session-name myapp open https://example.com
+  Or set AGENT_BROWSER_SESSION_NAME environment variable.
 
-  Or set AGENT_BROWSER_STATE environment variable.
+State Encryption:
+  Set AGENT_BROWSER_ENCRYPTION_KEY (64-char hex) for AES-256-GCM encryption.
+  Generate a key: openssl rand -hex 32
 
 Global Options:
   --json               Output as JSON
@@ -1499,7 +1652,12 @@ Global Options:
 
 Examples:
   agent-browser state save ./auth-state.json
-  agent-browser --state ./auth-state.json open https://example.com
+  agent-browser state load ./auth-state.json
+  agent-browser state list
+  agent-browser state show myapp-default.json
+  agent-browser state rename old-name new-name
+  agent-browser state clear --all
+  agent-browser state clean --older-than 7
 "##
         }
 
@@ -1586,6 +1744,68 @@ Examples:
   # After connecting, run commands normally
   agent-browser snapshot
   agent-browser click @e1
+"##
+        }
+
+        // === iOS Commands ===
+        "tap" => {
+            r##"
+agent-browser tap - Tap an element (touch gesture)
+
+Usage: agent-browser tap <selector>
+
+Taps an element. This is an alias for 'click' that provides semantic clarity
+for touch-based interfaces like iOS Safari.
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser tap "#submit-button"
+  agent-browser tap @e1
+  agent-browser -p ios tap "button:has-text('Sign In')"
+"##
+        }
+        "swipe" => {
+            r##"
+agent-browser swipe - Swipe gesture (iOS)
+
+Usage: agent-browser swipe <direction> [distance]
+
+Performs a swipe gesture on iOS Safari. The direction determines
+which way the content moves (swipe up scrolls down, etc.).
+
+Arguments:
+  direction    up, down, left, or right
+  distance     Optional distance in pixels (default: 300)
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser -p ios swipe up
+  agent-browser -p ios swipe down 500
+  agent-browser -p ios swipe left
+"##
+        }
+        "device" => {
+            r##"
+agent-browser device - Manage iOS simulators
+
+Usage: agent-browser device <subcommand>
+
+Subcommands:
+  list    List available iOS simulators
+
+Options:
+  --json               Output as JSON
+  --session <name>     Use specific session
+
+Examples:
+  agent-browser device list
+  agent-browser -p ios device list
 "##
         }
 
@@ -1699,19 +1919,64 @@ Options:
   --proxy-bypass <hosts>     Bypass proxy for these hosts (or AGENT_BROWSER_PROXY_BYPASS)
                              e.g., --proxy-bypass "localhost,*.internal.com"
   --ignore-https-errors      Ignore HTTPS certificate errors
-  -p, --provider <name>      Cloud browser provider (or AGENT_BROWSER_PROVIDER env)
+  --allow-file-access        Allow file:// URLs to access local files (Chromium only)
+  -p, --provider <name>      Browser provider: ios, browserbase, kernel, browseruse
+  --device <name>            iOS device name (e.g., "iPhone 15 Pro")
   --json                     JSON output
   --full, -f                 Full page screenshot
   --headed                   Show browser window (not headless)
   --cdp <port>               Connect via CDP (Chrome DevTools Protocol)
+  --auto-connect             Auto-discover and connect to running Chrome
+  --session-name <name>      Auto-save/restore session state (cookies, localStorage)
+  --config <path>            Use a custom config file (or AGENT_BROWSER_CONFIG env)
   --debug                    Debug output
   --version, -V              Show version
 
+Configuration:
+  agent-browser looks for agent-browser.json in these locations (lowest to highest priority):
+    1. ~/.agent-browser/config.json      User-level defaults
+    2. ./agent-browser.json              Project-level overrides
+    3. Environment variables             Override config file values
+    4. CLI flags                         Override everything
+
+  Use --config <path> to load a specific config file instead of the defaults.
+  If --config points to a missing or invalid file, agent-browser exits with an error.
+
+  Boolean flags accept an optional true/false value to override config:
+    --headed           (same as --headed true)
+    --headed false     (disables "headed": true from config)
+
+  Extensions from user and project configs are merged (not replaced).
+
+  Example agent-browser.json:
+    {{"headed": true, "proxy": "http://localhost:8080", "profile": "./browser-data"}}
+
 Environment:
+  AGENT_BROWSER_CONFIG           Path to config file (or use --config)
   AGENT_BROWSER_SESSION          Session name (default: "default")
+  AGENT_BROWSER_SESSION_NAME     Auto-save/restore state persistence name
+  AGENT_BROWSER_ENCRYPTION_KEY   64-char hex key for AES-256-GCM state encryption
+  AGENT_BROWSER_STATE_EXPIRE_DAYS Auto-delete states older than N days (default: 30)
   AGENT_BROWSER_EXECUTABLE_PATH  Custom browser executable path
-  AGENT_BROWSER_PROVIDER         Cloud browser provider
+  AGENT_BROWSER_EXTENSIONS       Comma-separated browser extension paths
+  AGENT_BROWSER_HEADED           Show browser window (not headless)
+  AGENT_BROWSER_JSON             JSON output
+  AGENT_BROWSER_FULL             Full page screenshot
+  AGENT_BROWSER_DEBUG            Debug output
+  AGENT_BROWSER_IGNORE_HTTPS_ERRORS Ignore HTTPS certificate errors
+  AGENT_BROWSER_PROVIDER         Browser provider (ios, browserbase, kernel, browseruse)
+  AGENT_BROWSER_AUTO_CONNECT     Auto-discover and connect to running Chrome
+  AGENT_BROWSER_ALLOW_FILE_ACCESS Allow file:// URLs to access local files
   AGENT_BROWSER_STREAM_PORT      Enable WebSocket streaming on port (e.g., 9223)
+  AGENT_BROWSER_IOS_DEVICE       Default iOS device name
+  AGENT_BROWSER_IOS_UDID         Default iOS device UDID
+
+Install (recommended, fastest - native Rust CLI):
+  npm install -g agent-browser
+  agent-browser install                  # Download Chromium (first time)
+
+Try without installing (slower, routes through Node.js):
+  npx agent-browser open example.com
 
 Examples:
   agent-browser open example.com
@@ -1721,8 +1986,18 @@ Examples:
   agent-browser find role button click --name Submit
   agent-browser get text @e1
   agent-browser screenshot --full
+  agent-browser wait --load networkidle  # Wait for slow pages to load
   agent-browser --cdp 9222 snapshot      # Connect via CDP port
-  agent-browser --profile ~/.myapp open example.com  # Persistent profile
+  agent-browser --auto-connect snapshot  # Auto-discover running Chrome
+  agent-browser --profile ~/.myapp open example.com    # Persistent profile
+  agent-browser --session-name myapp open example.com  # Auto-save/restore state
+
+iOS Simulator (requires Xcode and Appium):
+  agent-browser -p ios open example.com                    # Use default iPhone
+  agent-browser -p ios --device "iPhone 15 Pro" open url   # Specific device
+  agent-browser -p ios device list                         # List simulators
+  agent-browser -p ios swipe up                            # Swipe gesture
+  agent-browser -p ios tap @e1                             # Touch element
 "#
     );
 }
