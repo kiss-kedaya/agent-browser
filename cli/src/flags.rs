@@ -1,7 +1,8 @@
+use crate::color;
 use serde::Deserialize;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const CONFIG_FILENAME: &str = "agent-browser.json";
 
@@ -39,7 +40,13 @@ impl Config {
             session: other.session.or(self.session),
             session_name: other.session_name.or(self.session_name),
             executable_path: other.executable_path.or(self.executable_path),
-            extensions: other.extensions.or(self.extensions),
+            extensions: match (self.extensions, other.extensions) {
+                (Some(mut a), Some(b)) => {
+                    a.extend(b);
+                    Some(a)
+                }
+                (a, b) => b.or(a),
+            },
             profile: other.profile.or(self.profile),
             state: other.state.or(self.state),
             proxy: other.proxy.or(self.proxy),
@@ -57,7 +64,7 @@ impl Config {
     }
 }
 
-fn read_config_file(path: &PathBuf) -> Option<Config> {
+fn read_config_file(path: &Path) -> Option<Config> {
     let content = fs::read_to_string(path).ok()?;
     match serde_json::from_str::<Config>(&content) {
         Ok(config) => Some(config),
@@ -85,13 +92,24 @@ fn extract_config_path(args: &[String]) -> Option<String> {
 }
 
 pub fn load_config(args: &[String]) -> Config {
-    if let Some(path) = extract_config_path(args) {
-        let path = PathBuf::from(path);
-        return read_config_file(&path).unwrap_or_default();
+    if let Some(path_str) = extract_config_path(args) {
+        let path = PathBuf::from(&path_str);
+        if !path.exists() {
+            eprintln!(
+                "{} config file not found: {}",
+                color::warning_indicator(),
+                path_str
+            );
+            std::process::exit(1);
+        }
+        match read_config_file(&path) {
+            Some(c) => return c,
+            None => std::process::exit(1),
+        }
     }
 
-    let user_config = dirs::config_dir()
-        .map(|d| d.join(CONFIG_FILENAME))
+    let user_config = dirs::home_dir()
+        .map(|d| d.join(".config").join(CONFIG_FILENAME))
         .and_then(|p| read_config_file(&p))
         .unwrap_or_default();
 
@@ -304,6 +322,12 @@ pub fn parse_flags(args: &[String]) -> Flags {
                 }
             }
             "--auto-connect" => flags.auto_connect = true,
+            "--no-headed" => flags.headed = false,
+            "--no-debug" => flags.debug = false,
+            "--no-json" => flags.json = false,
+            "--no-ignore-https-errors" => flags.ignore_https_errors = false,
+            "--no-allow-file-access" => flags.allow_file_access = false,
+            "--no-auto-connect" => flags.auto_connect = false,
             "--session-name" => {
                 if let Some(s) = args.get(i + 1) {
                     flags.session_name = Some(s.clone());
@@ -334,6 +358,12 @@ pub fn clean_args(args: &[String]) -> Vec<String> {
         "--ignore-https-errors",
         "--allow-file-access",
         "--auto-connect",
+        "--no-headed",
+        "--no-debug",
+        "--no-json",
+        "--no-ignore-https-errors",
+        "--no-allow-file-access",
+        "--no-auto-connect",
     ];
     // Global flags that take a value (need to skip the next arg too)
     const GLOBAL_FLAGS_WITH_VALUE: &[&str] = &[
@@ -723,5 +753,90 @@ mod tests {
 
         let _ = fs::remove_file(&config_path);
         let _ = fs::remove_dir(&dir);
+    }
+
+    // === Negation flag tests ===
+
+    #[test]
+    fn test_no_headed_flag() {
+        let flags = parse_flags(&args("--headed --no-headed open example.com"));
+        assert!(!flags.headed);
+    }
+
+    #[test]
+    fn test_no_debug_flag() {
+        let flags = parse_flags(&args("--debug --no-debug open example.com"));
+        assert!(!flags.debug);
+    }
+
+    #[test]
+    fn test_no_json_flag() {
+        let flags = parse_flags(&args("--json --no-json open example.com"));
+        assert!(!flags.json);
+    }
+
+    #[test]
+    fn test_no_ignore_https_errors_flag() {
+        let flags = parse_flags(&args("--ignore-https-errors --no-ignore-https-errors open"));
+        assert!(!flags.ignore_https_errors);
+    }
+
+    #[test]
+    fn test_no_allow_file_access_flag() {
+        let flags = parse_flags(&args("--allow-file-access --no-allow-file-access open"));
+        assert!(!flags.allow_file_access);
+    }
+
+    #[test]
+    fn test_no_auto_connect_flag() {
+        let flags = parse_flags(&args("--auto-connect --no-auto-connect open"));
+        assert!(!flags.auto_connect);
+    }
+
+    #[test]
+    fn test_clean_args_removes_no_flags() {
+        let cleaned = clean_args(&args("--no-headed --no-debug open example.com"));
+        assert_eq!(cleaned, vec!["open", "example.com"]);
+    }
+
+    // === Extensions merge tests ===
+
+    #[test]
+    fn test_config_merge_extensions_concatenated() {
+        let user = Config {
+            extensions: Some(vec!["/ext1".to_string()]),
+            ..Config::default()
+        };
+        let project = Config {
+            extensions: Some(vec!["/ext2".to_string(), "/ext3".to_string()]),
+            ..Config::default()
+        };
+        let merged = user.merge(project);
+        assert_eq!(
+            merged.extensions,
+            Some(vec!["/ext1".to_string(), "/ext2".to_string(), "/ext3".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_config_merge_extensions_user_only() {
+        let user = Config {
+            extensions: Some(vec!["/ext1".to_string()]),
+            ..Config::default()
+        };
+        let project = Config::default();
+        let merged = user.merge(project);
+        assert_eq!(merged.extensions, Some(vec!["/ext1".to_string()]));
+    }
+
+    #[test]
+    fn test_config_merge_extensions_project_only() {
+        let user = Config::default();
+        let project = Config {
+            extensions: Some(vec!["/ext2".to_string()]),
+            ..Config::default()
+        };
+        let merged = user.merge(project);
+        assert_eq!(merged.extensions, Some(vec!["/ext2".to_string()]));
     }
 }

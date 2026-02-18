@@ -1879,6 +1879,12 @@ Options:
   --auto-connect             Auto-discover and connect to running Chrome
   --session-name <name>      Auto-save/restore session state (cookies, localStorage)
   --config <path>            Use a custom config file (instead of default locations)
+  --no-headed                Disable headed mode (override config)
+  --no-debug                 Disable debug output (override config)
+  --no-json                  Disable JSON output (override config)
+  --no-ignore-https-errors   Re-enable HTTPS error checking (override config)
+  --no-allow-file-access     Disable file:// access (override config)
+  --no-auto-connect          Disable auto-connect (override config)
   --debug                    Debug output
   --version, -V              Show version
 
@@ -1890,6 +1896,12 @@ Configuration:
     4. CLI flags                         Override everything
 
   Use --config <path> to load a specific config file instead of the defaults.
+  If --config points to a missing or invalid file, agent-browser exits with an error.
+
+  Use --no-<flag> to override boolean options set in a config file
+  (e.g., --no-headed disables "headed": true from config).
+
+  Extensions from user and project configs are merged (not replaced).
 
   Example agent-browser.json:
     {{"headed": true, "proxy": "http://localhost:8080", "profile": "./browser-data"}}

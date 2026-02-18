@@ -101,8 +101,25 @@ Every CLI flag can be set in the config file using its camelCase equivalent:
 }
 ```
 
+## Negating Boolean Options
+
+If a config file sets a boolean like `"headed": true`, you can override it for a single invocation with `--no-<flag>`:
+
+```bash
+agent-browser --no-headed open example.com
+```
+
+Supported negation flags: `--no-headed`, `--no-debug`, `--no-json`, `--no-ignore-https-errors`, `--no-allow-file-access`, `--no-auto-connect`.
+
+## Extensions Merging
+
+Extensions from user-level and project-level configs are **concatenated**, not replaced. For example, if `~/.config/agent-browser.json` specifies `["/ext1"]` and `./agent-browser.json` specifies `["/ext2"]`, the result is `["/ext1", "/ext2"]`.
+
+The `AGENT_BROWSER_EXTENSIONS` environment variable and CLI `--extension` flags follow the standard priority rules (env replaces config, CLI appends).
+
 ## Error Handling
 
-- **Missing config files** are silently ignored.
-- **Malformed JSON** prints a warning to stderr and continues without that file.
+- **Auto-discovered config files** (`~/.config/agent-browser.json`, `./agent-browser.json`) that are missing are silently ignored.
+- **`--config <path>`** with a missing or malformed file exits with an error.
+- **Malformed JSON** in auto-discovered files prints a warning to stderr and continues without that file.
 - **Unknown keys** are silently ignored for forward compatibility.
