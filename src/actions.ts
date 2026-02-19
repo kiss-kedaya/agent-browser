@@ -600,6 +600,17 @@ async function handlePress(command: PressCommand, browser: BrowserManager): Prom
   return successResponse(command.id, { pressed: true });
 }
 
+const ANNOTATION_OVERLAY_ID = '__agent_browser_annotations__';
+
+async function removeAnnotationOverlay(page: Page): Promise<void> {
+  await page
+    .evaluate((id) => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }, ANNOTATION_OVERLAY_ID)
+    .catch(() => {});
+}
+
 async function handleScreenshot(
   command: ScreenshotCommand,
   browser: BrowserManager
@@ -664,9 +675,46 @@ async function handleScreenshot(
         })
       );
 
-      annotations = results
-        .filter((a): a is Annotation => a !== null)
-        .sort((a, b) => a.number - b.number);
+      // When a selector is provided the screenshot is cropped to that element,
+      // so filter to annotations that overlap the target and shift coordinates.
+      let targetBox: { x: number; y: number; width: number; height: number } | null = null;
+      if (command.selector) {
+        const raw = await browser.getLocator(command.selector).boundingBox();
+        if (raw) {
+          targetBox = {
+            x: Math.round(raw.x),
+            y: Math.round(raw.y),
+            width: Math.round(raw.width),
+            height: Math.round(raw.height),
+          };
+        }
+      }
+
+      const filtered = results.filter((a): a is Annotation => a !== null);
+
+      if (targetBox) {
+        const tb = targetBox;
+        annotations = filtered
+          .filter((a) => {
+            const ax2 = a.box.x + a.box.width;
+            const ay2 = a.box.y + a.box.height;
+            const bx2 = tb.x + tb.width;
+            const by2 = tb.y + tb.height;
+            return a.box.x < bx2 && ax2 > tb.x && a.box.y < by2 && ay2 > tb.y;
+          })
+          .map((a) => ({
+            ...a,
+            box: {
+              x: a.box.x - tb.x,
+              y: a.box.y - tb.y,
+              width: a.box.width,
+              height: a.box.height,
+            },
+          }))
+          .sort((a, b) => a.number - b.number);
+      } else {
+        annotations = filtered.sort((a, b) => a.number - b.number);
+      }
 
       if (annotations.length > 0) {
         const overlayData = annotations.map((a) => ({
@@ -678,23 +726,39 @@ async function handleScreenshot(
         }));
 
         await page.evaluate(
-          `(function(items) {
-            var c = document.createElement('div');
-            c.id = '__agent_browser_annotations__';
-            c.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
-            var sx = window.scrollX, sy = window.scrollY;
-            for (var i = 0; i < items.length; i++) {
-              var it = items[i];
-              var b = document.createElement('div');
-              b.style.cssText = 'position:absolute;left:' + (it.x + sx) + 'px;top:' + (it.y + sy) + 'px;width:' + it.width + 'px;height:' + it.height + 'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
-              var l = document.createElement('div');
+          ({ items, id }) => {
+            const c = document.createElement('div');
+            c.id = id;
+            c.style.cssText =
+              'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
+            const sx = window.scrollX;
+            const sy = window.scrollY;
+            for (let i = 0; i < items.length; i++) {
+              const it = items[i];
+              const b = document.createElement('div');
+              b.style.cssText =
+                'position:absolute;left:' +
+                (it.x + sx) +
+                'px;top:' +
+                (it.y + sy) +
+                'px;width:' +
+                it.width +
+                'px;height:' +
+                it.height +
+                'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
+              const l = document.createElement('div');
               l.textContent = String(it.number);
-              l.style.cssText = 'position:absolute;top:-14px;left:-2px;background:rgba(255,0,0,0.9);color:#fff;font:bold 11px/14px monospace;padding:0 4px;border-radius:2px;white-space:nowrap;';
+              const labelTop = it.y + sy < 14 ? '2px' : '-14px';
+              l.style.cssText =
+                'position:absolute;top:' +
+                labelTop +
+                ';left:-2px;background:rgba(255,0,0,0.9);color:#fff;font:bold 11px/14px monospace;padding:0 4px;border-radius:2px;white-space:nowrap;';
               b.appendChild(l);
               c.appendChild(b);
             }
             document.documentElement.appendChild(c);
-          })(${JSON.stringify(overlayData)})`
+          },
+          { items: overlayData, id: ANNOTATION_OVERLAY_ID }
         );
       }
     }
@@ -702,11 +766,7 @@ async function handleScreenshot(
     await target.screenshot({ ...options, path: savePath });
 
     if (command.annotate) {
-      await page
-        .evaluate(
-          `(function() { var el = document.getElementById('__agent_browser_annotations__'); if (el) el.remove(); })()`
-        )
-        .catch(() => {});
+      await removeAnnotationOverlay(page);
     }
 
     return successResponse(command.id, {
@@ -714,13 +774,8 @@ async function handleScreenshot(
       ...(annotations && annotations.length > 0 ? { annotations } : {}),
     });
   } catch (error) {
-    // Clean up overlays on error
     if (command.annotate) {
-      await page
-        .evaluate(
-          `(function() { var el = document.getElementById('__agent_browser_annotations__'); if (el) el.remove(); })()`
-        )
-        .catch(() => {});
+      await removeAnnotationOverlay(page);
     }
     if (command.selector) {
       throw toAIFriendlyError(error, command.selector);
