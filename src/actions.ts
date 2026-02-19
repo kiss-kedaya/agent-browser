@@ -693,9 +693,12 @@ async function handleScreenshot(
 
       const filtered = results.filter((a): a is Annotation => a !== null);
 
+      // Filter by selector overlap if needed, but keep viewport-relative coords
+      // for overlay positioning. Coordinate shifting happens later for metadata only.
+      let overlayItems: Annotation[];
       if (targetBox) {
         const tb = targetBox;
-        annotations = filtered
+        overlayItems = filtered
           .filter((a) => {
             const ax2 = a.box.x + a.box.width;
             const ay2 = a.box.y + a.box.height;
@@ -703,22 +706,13 @@ async function handleScreenshot(
             const by2 = tb.y + tb.height;
             return a.box.x < bx2 && ax2 > tb.x && a.box.y < by2 && ay2 > tb.y;
           })
-          .map((a) => ({
-            ...a,
-            box: {
-              x: a.box.x - tb.x,
-              y: a.box.y - tb.y,
-              width: a.box.width,
-              height: a.box.height,
-            },
-          }))
           .sort((a, b) => a.number - b.number);
       } else {
-        annotations = filtered.sort((a, b) => a.number - b.number);
+        overlayItems = filtered.sort((a, b) => a.number - b.number);
       }
 
-      if (annotations.length > 0) {
-        const overlayData = annotations.map((a) => ({
+      if (overlayItems.length > 0) {
+        const overlayData = overlayItems.map((a) => ({
           number: a.number,
           x: a.box.x,
           y: a.box.y,
@@ -726,19 +720,26 @@ async function handleScreenshot(
           height: a.box.height,
         }));
 
+        // Uses position:absolute with document-relative coords so labels render
+        // correctly for both viewport and fullPage screenshots, and when the
+        // screenshot is scoped to a selector element.
         await page.evaluate(`(() => {
           var items = ${JSON.stringify(overlayData)};
           var id = ${JSON.stringify(ANNOTATION_OVERLAY_ID)};
+          var sx = window.scrollX || 0;
+          var sy = window.scrollY || 0;
           var c = document.createElement('div');
           c.id = id;
-          c.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
+          c.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;pointer-events:none;z-index:2147483647;';
           for (var i = 0; i < items.length; i++) {
             var it = items[i];
+            var dx = it.x + sx;
+            var dy = it.y + sy;
             var b = document.createElement('div');
-            b.style.cssText = 'position:fixed;left:' + it.x + 'px;top:' + it.y + 'px;width:' + it.width + 'px;height:' + it.height + 'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
+            b.style.cssText = 'position:absolute;left:' + dx + 'px;top:' + dy + 'px;width:' + it.width + 'px;height:' + it.height + 'px;border:2px solid rgba(255,0,0,0.8);box-sizing:border-box;pointer-events:none;';
             var l = document.createElement('div');
             l.textContent = String(it.number);
-            var labelTop = it.y < 14 ? '2px' : '-14px';
+            var labelTop = dy < 14 ? '2px' : '-14px';
             l.style.cssText = 'position:absolute;top:' + labelTop + ';left:-2px;background:rgba(255,0,0,0.9);color:#fff;font:bold 11px/14px monospace;padding:0 4px;border-radius:2px;white-space:nowrap;';
             b.appendChild(l);
             c.appendChild(b);
@@ -746,6 +747,39 @@ async function handleScreenshot(
           document.documentElement.appendChild(c);
         })()`);
         overlayInjected = true;
+      }
+
+      // Build returned annotation metadata with image-relative coordinates.
+      // Selector: shift to target-element-relative.
+      // fullPage: convert to document-relative (matching fullPage image origin).
+      // Default: viewport-relative (unchanged).
+      if (targetBox) {
+        const tb = targetBox;
+        annotations = overlayItems.map((a) => ({
+          ...a,
+          box: {
+            x: a.box.x - tb.x,
+            y: a.box.y - tb.y,
+            width: a.box.width,
+            height: a.box.height,
+          },
+        }));
+      } else if (command.fullPage) {
+        const scroll = await page.evaluate(() => ({
+          x: window.scrollX || 0,
+          y: window.scrollY || 0,
+        }));
+        annotations = overlayItems.map((a) => ({
+          ...a,
+          box: {
+            x: a.box.x + scroll.x,
+            y: a.box.y + scroll.y,
+            width: a.box.width,
+            height: a.box.height,
+          },
+        }));
+      } else {
+        annotations = overlayItems;
       }
     }
 

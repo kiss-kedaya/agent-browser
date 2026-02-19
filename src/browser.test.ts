@@ -384,6 +384,31 @@ describe('BrowserManager', () => {
       expect(data.path).toBeDefined();
       expect(data.annotations).toBeUndefined();
     });
+
+    it('should return document-relative coords for fullPage screenshots', async () => {
+      const page = browser.getPage();
+      await page.setContent(`
+        <html><body style="margin:0;">
+          <div style="height:2000px;"></div>
+          <button id="below-fold" style="margin:0;">Bottom</button>
+        </body></html>
+      `);
+
+      const result = await executeCommand(
+        { id: 'ann-5', action: 'screenshot', annotate: true, fullPage: true },
+        browser
+      );
+
+      expect(result.success).toBe(true);
+      const data = result.data as {
+        annotations?: Array<{ name?: string; box: { y: number } }>;
+      };
+      expect(data.annotations).toBeDefined();
+
+      const bottom = data.annotations!.find((a) => a.name === 'Bottom');
+      expect(bottom).toBeDefined();
+      expect(bottom!.box.y).toBeGreaterThanOrEqual(2000);
+    });
   });
 
   describe('evaluate', () => {
