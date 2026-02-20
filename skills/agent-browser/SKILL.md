@@ -88,6 +88,7 @@ agent-browser diff snapshot                          # Compare current vs last s
 agent-browser diff snapshot --baseline before.txt    # Compare current vs saved file
 agent-browser diff screenshot --baseline before.png  # Visual pixel diff
 agent-browser diff url <url1> <url2>                 # Compare two pages
+agent-browser diff url <url1> <url2> --wait-until networkidle  # Custom wait strategy
 ```
 
 ## Common Patterns

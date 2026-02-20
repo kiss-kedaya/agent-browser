@@ -2546,8 +2546,10 @@ async function handleDiffScreenshot(
 async function handleDiffUrl(command: DiffUrlCommand, browser: BrowserManager): Promise<Response> {
   const page = browser.getPage();
 
+  const waitUntil = command.waitUntil ?? 'load';
+
   // Capture state of url1
-  await page.goto(command.url1, { waitUntil: 'load' });
+  await page.goto(command.url1, { waitUntil });
   const { tree: tree1 } = await browser.getSnapshot();
   const snapshot1 = tree1 || 'Empty page';
   let screenshot1: Buffer | undefined;
@@ -2556,7 +2558,7 @@ async function handleDiffUrl(command: DiffUrlCommand, browser: BrowserManager): 
   }
 
   // Capture state of url2
-  await page.goto(command.url2, { waitUntil: 'load' });
+  await page.goto(command.url2, { waitUntil });
   const { tree: tree2 } = await browser.getSnapshot();
   const snapshot2 = tree2 || 'Empty page';
 

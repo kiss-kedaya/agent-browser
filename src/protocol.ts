@@ -764,6 +764,7 @@ const diffUrlSchema = baseCommandSchema.extend({
   url2: z.string().min(1),
   screenshot: z.boolean().optional(),
   fullPage: z.boolean().optional(),
+  waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
 });
 
 const pressSchema = baseCommandSchema.extend({

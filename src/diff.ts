@@ -75,7 +75,7 @@ function buildEditScript(trace: Int32Array[], a: string[], b: string[], max: num
   let y = b.length;
 
   for (let d = trace.length - 1; d > 0; d--) {
-    const v = trace[d - 1];
+    const v = trace[d];
     const k = x - y;
     const idx = k + max;
 
@@ -97,16 +97,12 @@ function buildEditScript(trace: Int32Array[], a: string[], b: string[], max: num
       edits.push({ type: 'equal', line: a[x] });
     }
 
-    if (d > 0) {
-      if (x === prevX) {
-        // Insertion
-        y--;
-        edits.push({ type: 'insert', line: b[y] });
-      } else {
-        // Deletion
-        x--;
-        edits.push({ type: 'delete', line: a[x] });
-      }
+    if (x === prevX) {
+      y--;
+      edits.push({ type: 'insert', line: b[y] });
+    } else {
+      x--;
+      edits.push({ type: 'delete', line: a[x] });
     }
   }
 
@@ -171,8 +167,12 @@ interface PixelDiffResult {
   dimensionMismatch: boolean;
 }
 
+const DIFF_ROUTE_PREFIX = 'https://agent-browser-diff.internal';
+
 /**
  * Compare two image buffers using the browser's Canvas API for pixel comparison.
+ * Images are served via intercepted page routes to avoid sending large base64 payloads
+ * through page.evaluate (which can be slow or hit CDP message size limits).
  */
 export async function diffScreenshots(
   page: Page,
@@ -180,134 +180,143 @@ export async function diffScreenshots(
   currentBuffer: Buffer,
   opts: { threshold?: number; outputPath?: string; baselineMime?: string }
 ): Promise<DiffScreenshotData> {
-  const baselineB64 = baselineBuffer.toString('base64');
-  const currentB64 = currentBuffer.toString('base64');
   const baselineMime = opts.baselineMime ?? 'image/png';
-
   const threshold = opts.threshold ?? 0.1;
 
-  // Pixel comparison runs in the browser via Canvas API to avoid native image dependencies.
-  // Uses page.evaluate with structured args for proper serialization of large base64 strings.
-  // DOM globals are aliased via globalThis to satisfy the Node-only TypeScript environment.
-  const pixelDiffFn = async (args: {
-    baselineB64: string;
-    currentB64: string;
-    baselineMime: string;
-    threshold: number;
-  }) => {
-    const g = globalThis as any;
-    const doc = g.document;
-    const Img = g.Image as new () => any;
-    function loadImage(dataUrl: string) {
-      return new Promise((resolve, reject) => {
-        const img = new Img();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = dataUrl;
-      });
-    }
-    const [imgA, imgB] = (await Promise.all([
-      loadImage('data:' + args.baselineMime + ';base64,' + args.baselineB64),
-      loadImage('data:image/png;base64,' + args.currentB64),
-    ])) as any[];
-    if (imgA.width !== imgB.width || imgA.height !== imgB.height) {
-      const c = doc.createElement('canvas');
-      c.width = 1;
-      c.height = 1;
-      return {
-        totalPixels: Math.max(imgA.width * imgA.height, imgB.width * imgB.height),
-        differentPixels: Math.max(imgA.width * imgA.height, imgB.width * imgB.height),
-        mismatchPercentage: 100,
-        diffBase64: c.toDataURL('image/png').split(',')[1],
-        dimensionMismatch: true,
-      };
-    }
-    const w = imgA.width;
-    const h = imgA.height;
-    const canvasA = doc.createElement('canvas');
-    canvasA.width = w;
-    canvasA.height = h;
-    const ctxA = canvasA.getContext('2d')!;
-    ctxA.drawImage(imgA, 0, 0);
-    const dataA = ctxA.getImageData(0, 0, w, h).data;
-    const canvasB = doc.createElement('canvas');
-    canvasB.width = w;
-    canvasB.height = h;
-    const ctxB = canvasB.getContext('2d')!;
-    ctxB.drawImage(imgB, 0, 0);
-    const dataB = ctxB.getImageData(0, 0, w, h).data;
-    const diffCanvas = doc.createElement('canvas');
-    diffCanvas.width = w;
-    diffCanvas.height = h;
-    const ctxDiff = diffCanvas.getContext('2d')!;
-    const diffImageData = ctxDiff.createImageData(w, h);
-    const diffData = diffImageData.data;
-    const maxColorDistance = args.threshold * 255 * Math.sqrt(3);
-    let differentPixels = 0;
-    const totalPixels = w * h;
-    for (let i = 0; i < totalPixels; i++) {
-      const offset = i * 4;
-      const rA = dataA[offset],
-        gA = dataA[offset + 1],
-        bA = dataA[offset + 2];
-      const rB = dataB[offset],
-        gB = dataB[offset + 1],
-        bB = dataB[offset + 2];
-      const dr = rA - rB,
-        dg = gA - gB,
-        db = bA - bB;
-      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-      if (dist > maxColorDistance) {
-        differentPixels++;
-        diffData[offset] = 255;
-        diffData[offset + 1] = 0;
-        diffData[offset + 2] = 0;
-        diffData[offset + 3] = 255;
-      } else {
-        diffData[offset] = Math.round(rA * 0.3);
-        diffData[offset + 1] = Math.round(gA * 0.3);
-        diffData[offset + 2] = Math.round(bA * 0.3);
-        diffData[offset + 3] = 255;
+  const baselineUrl = `${DIFF_ROUTE_PREFIX}/baseline.png`;
+  const currentUrl = `${DIFF_ROUTE_PREFIX}/current.png`;
+
+  // Serve image buffers via intercepted routes instead of inlining base64 in evaluate
+  await page.route(baselineUrl, (route) =>
+    route.fulfill({ body: baselineBuffer, contentType: baselineMime })
+  );
+  await page.route(currentUrl, (route) =>
+    route.fulfill({ body: currentBuffer, contentType: 'image/png' })
+  );
+
+  try {
+    const pixelDiffFn = async (args: {
+      baselineUrl: string;
+      currentUrl: string;
+      threshold: number;
+    }) => {
+      const g = globalThis as any;
+      const doc = g.document;
+      const Img = g.Image as new () => any;
+      function loadImage(url: string) {
+        return new Promise((resolve, reject) => {
+          const img = new Img();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = url;
+        });
       }
-    }
-    ctxDiff.putImageData(diffImageData, 0, 0);
-    const diffBase64 = diffCanvas.toDataURL('image/png').split(',')[1];
-    return {
-      totalPixels,
-      differentPixels,
-      mismatchPercentage: Math.round((differentPixels / totalPixels) * 10000) / 100,
-      diffBase64,
-      dimensionMismatch: false,
+      const [imgA, imgB] = (await Promise.all([
+        loadImage(args.baselineUrl),
+        loadImage(args.currentUrl),
+      ])) as any[];
+      if (imgA.width !== imgB.width || imgA.height !== imgB.height) {
+        const c = doc.createElement('canvas');
+        c.width = 1;
+        c.height = 1;
+        return {
+          totalPixels: Math.max(imgA.width * imgA.height, imgB.width * imgB.height),
+          differentPixels: Math.max(imgA.width * imgA.height, imgB.width * imgB.height),
+          mismatchPercentage: 100,
+          diffBase64: c.toDataURL('image/png').split(',')[1],
+          dimensionMismatch: true,
+        };
+      }
+      const w = imgA.width;
+      const h = imgA.height;
+      const canvasA = doc.createElement('canvas');
+      canvasA.width = w;
+      canvasA.height = h;
+      const ctxA = canvasA.getContext('2d')!;
+      ctxA.drawImage(imgA, 0, 0);
+      const dataA = ctxA.getImageData(0, 0, w, h).data;
+      const canvasB = doc.createElement('canvas');
+      canvasB.width = w;
+      canvasB.height = h;
+      const ctxB = canvasB.getContext('2d')!;
+      ctxB.drawImage(imgB, 0, 0);
+      const dataB = ctxB.getImageData(0, 0, w, h).data;
+      const diffCanvas = doc.createElement('canvas');
+      diffCanvas.width = w;
+      diffCanvas.height = h;
+      const ctxDiff = diffCanvas.getContext('2d')!;
+      const diffImageData = ctxDiff.createImageData(w, h);
+      const diffData = diffImageData.data;
+      const maxColorDistance = args.threshold * 255 * Math.sqrt(3);
+      let differentPixels = 0;
+      const totalPixels = w * h;
+      for (let i = 0; i < totalPixels; i++) {
+        const offset = i * 4;
+        const rA = dataA[offset],
+          gA = dataA[offset + 1],
+          bA = dataA[offset + 2];
+        const rB = dataB[offset],
+          gB = dataB[offset + 1],
+          bB = dataB[offset + 2];
+        const dr = rA - rB,
+          dg = gA - gB,
+          db = bA - bB;
+        const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+        if (dist > maxColorDistance) {
+          differentPixels++;
+          diffData[offset] = 255;
+          diffData[offset + 1] = 0;
+          diffData[offset + 2] = 0;
+          diffData[offset + 3] = 255;
+        } else {
+          diffData[offset] = Math.round(rA * 0.3);
+          diffData[offset + 1] = Math.round(gA * 0.3);
+          diffData[offset + 2] = Math.round(bA * 0.3);
+          diffData[offset + 3] = 255;
+        }
+      }
+      ctxDiff.putImageData(diffImageData, 0, 0);
+      const diffBase64 = diffCanvas.toDataURL('image/png').split(',')[1];
+      return {
+        totalPixels,
+        differentPixels,
+        mismatchPercentage: Math.round((differentPixels / totalPixels) * 10000) / 100,
+        diffBase64,
+        dimensionMismatch: false,
+      };
     };
-  };
-  const result = (await page.evaluate(pixelDiffFn, {
-    baselineB64,
-    currentB64,
-    baselineMime,
-    threshold,
-  })) as PixelDiffResult;
 
-  let outputPath = opts.outputPath;
-  if (!outputPath) {
-    const tmpDir = path.join(
-      process.env.HOME || process.env.USERPROFILE || '/tmp',
-      '.agent-browser',
-      'tmp',
-      'diffs'
-    );
-    await mkdir(tmpDir, { recursive: true });
-    outputPath = path.join(tmpDir, `diff-${Date.now()}.png`);
+    const result = (await page.evaluate(pixelDiffFn, {
+      baselineUrl,
+      currentUrl,
+      threshold,
+    })) as PixelDiffResult;
+
+    let outputPath = opts.outputPath;
+    if (!outputPath) {
+      const tmpDir = path.join(
+        process.env.HOME || process.env.USERPROFILE || '/tmp',
+        '.agent-browser',
+        'tmp',
+        'diffs'
+      );
+      await mkdir(tmpDir, { recursive: true });
+      outputPath = path.join(tmpDir, `diff-${Date.now()}.png`);
+    }
+
+    const diffBuffer = Buffer.from(result.diffBase64, 'base64');
+    await writeFile(outputPath, diffBuffer);
+
+    return {
+      diffPath: outputPath,
+      totalPixels: result.totalPixels,
+      differentPixels: result.differentPixels,
+      mismatchPercentage: result.mismatchPercentage,
+      match: result.differentPixels === 0,
+      ...(result.dimensionMismatch ? { dimensionMismatch: true } : {}),
+    };
+  } finally {
+    await page.unroute(baselineUrl);
+    await page.unroute(currentUrl);
   }
-
-  const diffBuffer = Buffer.from(result.diffBase64, 'base64');
-  await writeFile(outputPath, diffBuffer);
-
-  return {
-    diffPath: outputPath,
-    totalPixels: result.totalPixels,
-    differentPixels: result.differentPixels,
-    mismatchPercentage: result.mismatchPercentage,
-    match: result.differentPixels === 0,
-    ...(result.dimensionMismatch ? { dimensionMismatch: true } : {}),
-  };
 }

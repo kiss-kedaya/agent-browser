@@ -1043,6 +1043,7 @@ export interface DiffUrlCommand extends BaseCommand {
   url2: string;
   screenshot?: boolean;
   fullPage?: boolean;
+  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle';
 }
 
 // Response types

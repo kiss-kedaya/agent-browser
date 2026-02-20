@@ -265,6 +265,7 @@ agent-browser diff screenshot --baseline b.png -o d.png  # Save diff image to cu
 agent-browser diff screenshot --baseline b.png -t 0.2    # Adjust color threshold (0-1)
 agent-browser diff url https://v1.com https://v2.com     # Compare two URLs (snapshot diff)
 agent-browser diff url https://v1.com https://v2.com --screenshot  # Also visual diff
+agent-browser diff url https://v1.com https://v2.com --wait-until networkidle  # Custom wait strategy
 ```
 
 ### Debug

@@ -1919,6 +1919,7 @@ URL Diff:
   Options:
     --screenshot             Also compare screenshots (default: snapshot only)
     --full                   Full page screenshots
+    --wait-until <strategy>  Navigation wait strategy: load, domcontentloaded, networkidle (default: load)
 
 Global Options:
   --json               Output as JSON

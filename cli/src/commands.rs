@@ -1059,12 +1059,22 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                         if let Some(path) = rest.get(i + 1) {
                             obj.insert("baseline".to_string(), json!(path));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff snapshot --baseline".to_string(),
+                                usage: "diff snapshot --baseline <file>",
+                            });
                         }
                     }
                     "-s" | "--selector" => {
                         if let Some(s) = rest.get(i + 1) {
                             obj.insert("selector".to_string(), json!(s));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff snapshot --selector".to_string(),
+                                usage: "diff snapshot --selector <sel>",
+                            });
                         }
                     }
                     "-c" | "--compact" => {
@@ -1076,6 +1086,11 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                                 obj.insert("maxDepth".to_string(), json!(n));
                                 i += 1;
                             }
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff snapshot --depth".to_string(),
+                                usage: "diff snapshot --depth <n>",
+                            });
                         }
                     }
                     other if other.starts_with('-') => {
@@ -1084,7 +1099,12 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                             usage: "diff snapshot [--baseline <file>] [--selector <sel>] [--compact] [--depth <n>]",
                         });
                     }
-                    _ => {}
+                    other => {
+                        return Err(ParseError::InvalidValue {
+                            message: format!("Unexpected argument: {}", other),
+                            usage: "diff snapshot [--baseline <file>] [--selector <sel>] [--compact] [--depth <n>]",
+                        });
+                    }
                 }
                 i += 1;
             }
@@ -1100,12 +1120,22 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                         if let Some(path) = rest.get(i + 1) {
                             obj.insert("baseline".to_string(), json!(path));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff screenshot --baseline".to_string(),
+                                usage: "diff screenshot --baseline <file>",
+                            });
                         }
                     }
                     "-o" | "--output" => {
                         if let Some(path) = rest.get(i + 1) {
                             obj.insert("output".to_string(), json!(path));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff screenshot --output".to_string(),
+                                usage: "diff screenshot --output <file>",
+                            });
                         }
                     }
                     "-t" | "--threshold" => {
@@ -1114,12 +1144,22 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                                 obj.insert("threshold".to_string(), json!(n));
                                 i += 1;
                             }
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff screenshot --threshold".to_string(),
+                                usage: "diff screenshot --threshold <0-1>",
+                            });
                         }
                     }
                     "-s" | "--selector" => {
                         if let Some(s) = rest.get(i + 1) {
                             obj.insert("selector".to_string(), json!(s));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff screenshot --selector".to_string(),
+                                usage: "diff screenshot --selector <sel>",
+                            });
                         }
                     }
                     "--full" => {
@@ -1131,9 +1171,17 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                             usage: "diff screenshot --baseline <file> [--output <file>] [--threshold <0-1>] [--selector <sel>] [--full]",
                         });
                     }
-                    _ => {}
+                    other => {
+                        return Err(ParseError::InvalidValue {
+                            message: format!("Unexpected argument: {}", other),
+                            usage: "diff screenshot --baseline <file> [--output <file>] [--threshold <0-1>] [--selector <sel>] [--full]",
+                        });
+                    }
                 }
                 i += 1;
+            }
+            if flags.full {
+                obj.insert("fullPage".to_string(), json!(true));
             }
             if !obj.contains_key("baseline") {
                 return Err(ParseError::MissingArguments {
@@ -1168,13 +1216,29 @@ fn parse_diff(rest: &[&str], id: &str, flags: &Flags) -> Result<Value, ParseErro
                     "--full" => {
                         obj.insert("fullPage".to_string(), json!(true));
                     }
+                    "--wait-until" => {
+                        if let Some(val) = rest.get(i + 1) {
+                            obj.insert("waitUntil".to_string(), json!(val));
+                            i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "diff url --wait-until".to_string(),
+                                usage: "diff url <url1> <url2> --wait-until <load|domcontentloaded|networkidle>",
+                            });
+                        }
+                    }
                     other if other.starts_with('-') => {
                         return Err(ParseError::InvalidValue {
                             message: format!("Unknown flag: {}", other),
-                            usage: "diff url <url1> <url2> [--screenshot] [--full]",
+                            usage: "diff url <url1> <url2> [--screenshot] [--full] [--wait-until <strategy>]",
                         });
                     }
-                    _ => {}
+                    other => {
+                        return Err(ParseError::InvalidValue {
+                            message: format!("Unexpected argument: {}", other),
+                            usage: "diff url <url1> <url2> [--screenshot] [--full] [--wait-until <strategy>]",
+                        });
+                    }
                 }
                 i += 1;
             }
@@ -2862,5 +2926,291 @@ mod tests {
         let cmd = parse_command(&args("trace stop"), &default_flags()).unwrap();
         assert_eq!(cmd["action"], "trace_stop");
         assert!(cmd.get("path").is_none() || cmd["path"].is_null());
+    }
+
+    // === Diff Tests ===
+
+    #[test]
+    fn test_diff_snapshot_basic() {
+        let cmd = parse_command(&args("diff snapshot"), &default_flags()).unwrap();
+        assert_eq!(cmd["action"], "diff_snapshot");
+    }
+
+    #[test]
+    fn test_diff_snapshot_baseline() {
+        let cmd =
+            parse_command(&args("diff snapshot --baseline before.txt"), &default_flags()).unwrap();
+        assert_eq!(cmd["action"], "diff_snapshot");
+        assert_eq!(cmd["baseline"], "before.txt");
+    }
+
+    #[test]
+    fn test_diff_snapshot_selector_compact_depth() {
+        let cmd = parse_command(
+            &args("diff snapshot --selector #main --compact --depth 3"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_snapshot");
+        assert_eq!(cmd["selector"], "#main");
+        assert_eq!(cmd["compact"], true);
+        assert_eq!(cmd["maxDepth"], 3);
+    }
+
+    #[test]
+    fn test_diff_snapshot_short_flags() {
+        let cmd =
+            parse_command(&args("diff snapshot -b snap.txt -s .content -c -d 2"), &default_flags())
+                .unwrap();
+        assert_eq!(cmd["action"], "diff_snapshot");
+        assert_eq!(cmd["baseline"], "snap.txt");
+        assert_eq!(cmd["selector"], ".content");
+        assert_eq!(cmd["compact"], true);
+        assert_eq!(cmd["maxDepth"], 2);
+    }
+
+    #[test]
+    fn test_diff_screenshot_baseline() {
+        let cmd = parse_command(
+            &args("diff screenshot --baseline before.png"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_screenshot");
+        assert_eq!(cmd["baseline"], "before.png");
+    }
+
+    #[test]
+    fn test_diff_screenshot_all_options() {
+        let cmd = parse_command(
+            &args("diff screenshot --baseline b.png --output d.png --threshold 0.2 --selector #hero --full"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_screenshot");
+        assert_eq!(cmd["baseline"], "b.png");
+        assert_eq!(cmd["output"], "d.png");
+        assert_eq!(cmd["threshold"], 0.2);
+        assert_eq!(cmd["selector"], "#hero");
+        assert_eq!(cmd["fullPage"], true);
+    }
+
+    #[test]
+    fn test_diff_screenshot_missing_baseline() {
+        let result = parse_command(&args("diff screenshot"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_screenshot_global_full_flag() {
+        let mut flags = default_flags();
+        flags.full = true;
+        let cmd =
+            parse_command(&args("diff screenshot --baseline b.png"), &flags).unwrap();
+        assert_eq!(cmd["action"], "diff_screenshot");
+        assert_eq!(cmd["fullPage"], true);
+    }
+
+    #[test]
+    fn test_diff_url_basic() {
+        let cmd = parse_command(
+            &args("diff url https://a.com https://b.com"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_url");
+        assert_eq!(cmd["url1"], "https://a.com");
+        assert_eq!(cmd["url2"], "https://b.com");
+    }
+
+    #[test]
+    fn test_diff_url_with_screenshot_full() {
+        let cmd = parse_command(
+            &args("diff url https://a.com https://b.com --screenshot --full"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_url");
+        assert_eq!(cmd["screenshot"], true);
+        assert_eq!(cmd["fullPage"], true);
+    }
+
+    #[test]
+    fn test_diff_url_with_wait_until() {
+        let cmd = parse_command(
+            &args("diff url https://a.com https://b.com --wait-until networkidle"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "diff_url");
+        assert_eq!(cmd["waitUntil"], "networkidle");
+    }
+
+    #[test]
+    fn test_diff_url_global_full_flag() {
+        let mut flags = default_flags();
+        flags.full = true;
+        let cmd =
+            parse_command(&args("diff url https://a.com https://b.com"), &flags).unwrap();
+        assert_eq!(cmd["fullPage"], true);
+    }
+
+    #[test]
+    fn test_diff_missing_subcommand() {
+        let result = parse_command(&args("diff"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_unknown_subcommand() {
+        let result = parse_command(&args("diff invalid"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::UnknownSubcommand { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_snapshot_baseline_missing_value() {
+        let result = parse_command(&args("diff snapshot --baseline"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_snapshot_selector_missing_value() {
+        let result = parse_command(&args("diff snapshot --selector"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_snapshot_depth_missing_value() {
+        let result = parse_command(&args("diff snapshot --depth"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_screenshot_threshold_missing_value() {
+        let result = parse_command(
+            &args("diff screenshot --baseline b.png --threshold"),
+            &default_flags(),
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_screenshot_output_missing_value() {
+        let result = parse_command(
+            &args("diff screenshot --baseline b.png --output"),
+            &default_flags(),
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_url_wait_until_missing_value() {
+        let result = parse_command(
+            &args("diff url https://a.com https://b.com --wait-until"),
+            &default_flags(),
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_snapshot_unexpected_arg() {
+        let result = parse_command(&args("diff snapshot foo"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_screenshot_unexpected_arg() {
+        let result = parse_command(
+            &args("diff screenshot --baseline b.png unexpected"),
+            &default_flags(),
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_url_unexpected_arg() {
+        let result = parse_command(
+            &args("diff url https://a.com https://b.com extra"),
+            &default_flags(),
+        );
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_snapshot_unknown_flag() {
+        let result = parse_command(&args("diff snapshot --invalid"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_url_missing_urls() {
+        let result = parse_command(&args("diff url"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
+    }
+
+    #[test]
+    fn test_diff_url_missing_second_url() {
+        let result = parse_command(&args("diff url https://a.com"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
     }
 }
