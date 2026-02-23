@@ -1224,6 +1224,16 @@ describe('getDefaultTimeout', () => {
     expect(getDefaultTimeout()).toBe(25000);
   });
 
+  it('should return 25000 for values below 1000ms floor', () => {
+    process.env.AGENT_BROWSER_DEFAULT_TIMEOUT = '500';
+    expect(getDefaultTimeout()).toBe(25000);
+  });
+
+  it('should accept exactly 1000ms as the minimum', () => {
+    process.env.AGENT_BROWSER_DEFAULT_TIMEOUT = '1000';
+    expect(getDefaultTimeout()).toBe(1000);
+  });
+
   it('should return 25000 for non-numeric strings', () => {
     process.env.AGENT_BROWSER_DEFAULT_TIMEOUT = 'abc';
     expect(getDefaultTimeout()).toBe(25000);

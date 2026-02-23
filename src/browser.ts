@@ -39,7 +39,7 @@ export function getDefaultTimeout(): number {
   const envValue = process.env.AGENT_BROWSER_DEFAULT_TIMEOUT;
   if (envValue) {
     const parsed = parseInt(envValue, 10);
-    if (!isNaN(parsed) && parsed > 0) {
+    if (!isNaN(parsed) && parsed >= 1000) {
       return parsed;
     }
   }
