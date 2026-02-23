@@ -139,6 +139,22 @@ Extensions from user-level and project-level configs are **concatenated**, not r
 
 The `AGENT_BROWSER_EXTENSIONS` environment variable and CLI `--extension` flags follow the standard priority rules (env replaces config, CLI appends).
 
+## Environment Variables
+
+These environment variables configure daemon-level behavior that is not settable via config file or CLI flags:
+
+<table>
+  <thead>
+    <tr><th>Variable</th><th>Description</th><th>Default</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>AGENT_BROWSER_DEFAULT_TIMEOUT</code></td><td>Default Playwright timeout in ms. Keep below 30000 to avoid IPC timeouts.</td><td><code>25000</code></td></tr>
+    <tr><td><code>AGENT_BROWSER_COLOR_SCHEME</code></td><td>Color scheme preference (<code>dark</code>, <code>light</code>, <code>no-preference</code>).</td><td>(none)</td></tr>
+    <tr><td><code>AGENT_BROWSER_STATE_EXPIRE_DAYS</code></td><td>Auto-delete saved session states older than N days.</td><td><code>30</code></td></tr>
+    <tr><td><code>AGENT_BROWSER_DEBUG</code></td><td>Enable debug output (<code>1</code> to enable).</td><td>(disabled)</td></tr>
+  </tbody>
+</table>
+
 ## Error Handling
 
 - **Auto-discovered config files** (`~/.agent-browser/config.json`, `./agent-browser.json`) that are missing are silently ignored.
