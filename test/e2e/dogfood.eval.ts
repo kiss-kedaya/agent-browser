@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 const AI_GATEWAY_URL =
@@ -56,14 +56,23 @@ async function runDogfood(outputDir: string): Promise<{
   const verbose = process.env.DOGFOOD_VERBOSE !== '0';
   const log = verbose ? (msg: string) => process.stderr.write(`  [dogfood] ${msg}\n`) : () => {};
 
+  const chatLogPath = path.join(outputDir, 'chat-log.jsonl');
+  writeFileSync(chatLogPath, '');
+
+  function appendToLog(entry: Record<string, unknown>) {
+    appendFileSync(chatLogPath, JSON.stringify(entry) + '\n');
+  }
+
   for await (const message of conversation) {
     messages.push(message);
 
     if (message.type === 'system' && message.subtype === 'init') {
       log(`session started (model: ${message.model})`);
+      appendToLog({ type: 'system', subtype: 'init', model: message.model });
     }
 
     if (message.type === 'assistant' && message.message?.content) {
+      const logParts: Record<string, unknown>[] = [];
       for (const block of message.message.content) {
         if ('type' in block && block.type === 'tool_use') {
           toolsUsed.add(block.name);
@@ -83,12 +92,15 @@ async function runDogfood(outputDir: string): Promise<{
             preview = JSON.stringify(input).slice(0, 120);
           }
           log(`${block.name}: ${preview}`);
+          logParts.push({ tool: block.name, input: block.input });
         }
         if ('type' in block && block.type === 'text' && block.text) {
           const line = block.text.split('\n')[0].slice(0, 120);
           if (line.trim()) log(line);
+          logParts.push({ text: block.text });
         }
       }
+      appendToLog({ type: 'assistant', content: logParts });
     }
 
     if (message.type === 'result') {
@@ -106,32 +118,11 @@ async function runDogfood(outputDir: string): Promise<{
       } else {
         log(`stopped: ${message.subtype} (${message.num_turns} turns, ${cost}${cacheInfo})`);
       }
+      appendToLog({ type: 'result', subtype: message.subtype, num_turns: message.num_turns, cost: message.total_cost_usd });
     }
   }
 
-  const chatLog = messages.map((msg) => {
-    if (msg.type === 'assistant' && msg.message?.content) {
-      const parts = msg.message.content.map((block: Record<string, unknown>) => {
-        if ('type' in block && block.type === 'tool_use') {
-          return { tool: block.name, input: block.input };
-        }
-        if ('type' in block && block.type === 'text') {
-          return { text: block.text };
-        }
-        return block;
-      });
-      return { type: 'assistant', content: parts };
-    }
-    if (msg.type === 'result') {
-      return { type: 'result', subtype: msg.subtype, num_turns: msg.num_turns };
-    }
-    return { type: msg.type };
-  });
-  writeFileSync(
-    path.join(outputDir, 'chat-log.json'),
-    JSON.stringify(chatLog, null, 2),
-  );
-  log(`chat log saved to ${path.join(outputDir, 'chat-log.json')}`);
+  log(`chat log: ${chatLogPath}`);
 
   return { result, messages, toolsUsed };
 }
@@ -218,18 +209,16 @@ describe.skipIf(!API_KEY)('Dogfood e2e eval (Agent SDK)', () => {
 
       expect(section, `${issueId}: missing URL`).toMatch(/\*\*URL\*\*/i);
 
-      expect(section, `${issueId}: missing Repro Video`).toMatch(
+      expect(section, `${issueId}: missing Repro Video field`).toMatch(
         /\*\*Repro Video\*\*/i
       );
 
-      expect(section, `${issueId}: missing Repro Steps`).toMatch(
-        /\*\*Repro Steps\*\*/i
-      );
-
+      const hasScreenshot = /!\[.*?\]\(.*?\)/.test(section);
+      const hasReproSteps = /\*\*Repro Steps\*\*/i.test(section);
       expect(
-        section,
-        `${issueId}: no screenshot refs in repro steps`
-      ).toMatch(/!\[.*?\]\(.*?\)/);
+        hasScreenshot || hasReproSteps,
+        `${issueId}: needs either screenshot refs or repro steps`
+      ).toBe(true);
     }
   });
 
@@ -256,12 +245,17 @@ describe.skipIf(!API_KEY)('Dogfood e2e eval (Agent SDK)', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('produced video files', () => {
+  it('produced video files for interactive issues', () => {
+    const reportPath = path.join(outputDir, 'report.md');
+    if (!existsSync(reportPath)) return;
+    const report = readFileSync(reportPath, 'utf-8');
+    const hasVideoRefs = /videos\/issue-\d+/.test(report);
+    if (!hasVideoRefs) return;
     const videosDir = path.join(outputDir, 'videos');
     const videos = findFiles(videosDir, '.webm');
     expect(
       videos.length,
-      'No video files found in output'
+      'Report references videos but none were found'
     ).toBeGreaterThan(0);
   });
 });

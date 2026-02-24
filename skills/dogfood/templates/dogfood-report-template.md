@@ -19,7 +19,7 @@
 
 ## Issues
 
-<!-- Copy this block for each issue found. Every issue needs a repro video, step-by-step screenshots, and clear repro steps. -->
+<!-- Copy this block for each issue found. Interactive issues need video + step-by-step screenshots. Static issues (typos, visual glitches) only need a single screenshot -- set Repro Video to N/A. -->
 
 ### ISSUE-001: {Short title}
 
@@ -28,7 +28,7 @@
 | **Severity** | critical / high / medium / low |
 | **Category** | visual / functional / ux / content / performance / console / accessibility |
 | **URL** | {page URL where issue was found} |
-| **Repro Video** | {relative path to repro video, e.g., videos/issue-001-repro.webm} |
+| **Repro Video** | {path to video, or N/A for static issues} |
 
 **Description**
 

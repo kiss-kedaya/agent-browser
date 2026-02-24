@@ -113,28 +113,34 @@ Steps 4 and 5 happen together -- explore and document in a single pass. When you
 
 Every issue must be reproducible. When you find something wrong, do not just note it -- prove it with evidence. The goal is that someone reading the report can see exactly what happened and replay it.
 
-**For every issue, capture a full repro package:**
+**Choose the right level of evidence for the issue:**
 
-1. **Start a repro video.** Begin recording _before_ reproducing so the entire sequence is captured:
+#### Interactive / behavioral issues (functional, ux, console errors on action)
+
+These require user interaction to reproduce -- use full repro with video and step-by-step screenshots:
+
+1. **Start a repro video** _before_ reproducing:
 
 ```bash
 agent-browser --session {SESSION} record start {OUTPUT_DIR}/videos/issue-{NNN}-repro.webm
 ```
 
-2. **Reproduce from a clean starting point.** Navigate to the page where the issue begins, then walk through the exact steps. At each step, take a screenshot:
+2. **Walk through the steps at human pace.** Pause 1-2 seconds between actions so the video is watchable. Take a screenshot at each step:
 
 ```bash
 agent-browser --session {SESSION} screenshot {OUTPUT_DIR}/screenshots/issue-{NNN}-step-1.png
+sleep 1
 # Perform action (click, fill, etc.)
+sleep 1
 agent-browser --session {SESSION} screenshot {OUTPUT_DIR}/screenshots/issue-{NNN}-step-2.png
-# Perform next action
-agent-browser --session {SESSION} screenshot {OUTPUT_DIR}/screenshots/issue-{NNN}-step-3.png
+sleep 1
 # ...continue until the issue manifests
 ```
 
-3. **Capture the problem state.** Take a final annotated screenshot of the broken state:
+3. **Capture the broken state.** Pause so the viewer can see it, then take an annotated screenshot:
 
 ```bash
+sleep 2
 agent-browser --session {SESSION} screenshot --annotate {OUTPUT_DIR}/screenshots/issue-{NNN}-result.png
 ```
 
@@ -144,11 +150,25 @@ agent-browser --session {SESSION} screenshot --annotate {OUTPUT_DIR}/screenshots
 agent-browser --session {SESSION} record stop
 ```
 
-5. **Write the repro steps in the report.** Each step should match a screenshot. Use the format from the report template -- numbered steps, each with its screenshot path, so a reader can follow along visually.
+5. Write numbered repro steps in the report, each referencing its screenshot.
 
-6. **Append to the report immediately.** Do not batch issues for later. Write each one as you find it so nothing is lost if the session is interrupted.
+#### Static / visible-on-load issues (typos, placeholder text, clipped text, misalignment, console errors on load)
 
-7. **Increment the issue counter** (ISSUE-001, ISSUE-002, ...).
+These are visible without interaction -- a single annotated screenshot is sufficient. No video, no multi-step repro:
+
+```bash
+agent-browser --session {SESSION} screenshot --annotate {OUTPUT_DIR}/screenshots/issue-{NNN}.png
+```
+
+Write a brief description and reference the screenshot in the report. Set **Repro Video** to `N/A`.
+
+---
+
+**For all issues:**
+
+1. **Append to the report immediately.** Do not batch issues for later. Write each one as you find it so nothing is lost if the session is interrupted.
+
+2. **Increment the issue counter** (ISSUE-001, ISSUE-002, ...).
 
 ### 6. Wrap Up
 
@@ -167,9 +187,9 @@ agent-browser --session {SESSION} close
 
 ## Guidance
 
-- **Repro is everything.** Every issue needs proof. If you can't reproduce it with screenshots and video, it's just a rumor. Record first, document second.
-- **Screenshot each step, not just the result.** A single screenshot of the broken state is not enough. Capture the before, the action, and the after -- so someone can see the full sequence.
-- **Default to recording video.** Start a repro video for every issue. Video captures timing, transitions, and interaction details that screenshots miss. Only skip video for purely static visual issues (e.g., a typo).
+- **Repro is everything.** Every issue needs proof -- but match the evidence to the issue. Interactive bugs need video and step-by-step screenshots. Static bugs (typos, placeholder text, visual glitches visible on load) only need a single annotated screenshot.
+- **Don't record video for static issues.** A typo or clipped text doesn't benefit from a video. Save video for issues that involve user interaction, timing, or state changes.
+- **For interactive issues, screenshot each step.** Capture the before, the action, and the after -- so someone can see the full sequence.
 - **Write repro steps that map to screenshots.** Each numbered step in the report should reference its corresponding screenshot. A reader should be able to follow the steps visually without touching a browser.
 - **Be thorough but use judgment.** You are not following a test script -- you are exploring like a real user would. If something feels off, investigate.
 - **Write findings incrementally.** Append each issue to the report as you discover it. If the session is interrupted, findings are preserved. Never batch all issues for the end.
@@ -177,6 +197,8 @@ agent-browser --session {SESSION} close
 - **Never read the target app's source code.** You are testing as a user, not auditing code. Do not read HTML, JS, or config files of the app under test. All findings must come from what you observe in the browser.
 - **Check the console.** Many issues are invisible in the UI but show up as JS errors or failed requests.
 - **Test like a user, not a robot.** Try common workflows end-to-end. Click things a real user would click. Enter realistic data.
+- **Type like a human.** When filling form fields during video recording, use `type` instead of `fill` -- it types character-by-character. Use `fill` only outside of video recording when speed matters.
+- **Pace repro videos for humans.** Add `sleep 1` between actions and `sleep 2` before the final result screenshot. Videos should be watchable at 1x speed -- a human reviewing the report needs to see what happened, not a blur of instant state changes.
 - **Be efficient with commands.** Batch multiple `agent-browser` commands in a single shell call when they are independent (e.g., `agent-browser ... screenshot ... && agent-browser ... console`). Use `agent-browser --session {SESSION} scroll down 300` for scrolling -- do not use `key` or `evaluate` to scroll.
 
 ## References
