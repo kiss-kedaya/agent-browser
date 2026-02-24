@@ -1198,6 +1198,12 @@ export class BrowserManager {
     // Cloud browser providers require explicit opt-in via -p flag or AGENT_BROWSER_PROVIDER env var
     // -p flag takes precedence over env var
     const provider = options.provider ?? process.env.AGENT_BROWSER_PROVIDER;
+    if (this.downloadPath && provider) {
+      const warning =
+        "--download-path is ignored when using a cloud provider (downloads use the remote browser's configuration)";
+      this.launchWarnings.push(warning);
+      console.error(`[WARN] ${warning}`);
+    }
     if (provider === 'browserbase') {
       await this.connectToBrowserbase();
       return;
@@ -1227,6 +1233,7 @@ export class BrowserManager {
           throw new Error(`Cannot create download directory '${resolved}': ${msg}`);
         }
       }
+      this.downloadPath = resolved;
     }
 
     const browserType = options.browser ?? 'chromium';
