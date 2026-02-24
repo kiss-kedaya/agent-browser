@@ -42,6 +42,7 @@ async function runDogfood(outputDir: string): Promise<{
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       maxTurns: 80,
+      maxBudgetUsd: 2,
       settingSources: ['project'],
       persistSession: false,
       env: {
@@ -92,10 +93,18 @@ async function runDogfood(outputDir: string): Promise<{
 
     if (message.type === 'result') {
       result = message;
+      const cost = `$${message.total_cost_usd.toFixed(4)}`;
+      const usage = message.usage;
+      const cacheRead = usage.cache_read_input_tokens ?? 0;
+      const cacheCreate = usage.cache_creation_input_tokens ?? 0;
+      const inputTokens = usage.input_tokens ?? 0;
+      const cacheInfo = cacheRead > 0
+        ? ` | cache: ${cacheRead} read, ${cacheCreate} created, ${inputTokens} uncached`
+        : '';
       if (message.subtype === 'success') {
-        log(`done (${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)})`);
+        log(`done (${message.num_turns} turns, ${cost}${cacheInfo})`);
       } else {
-        log(`failed: ${message.subtype}`);
+        log(`stopped: ${message.subtype} (${message.num_turns} turns, ${cost}${cacheInfo})`);
       }
     }
   }
@@ -148,7 +157,7 @@ describe.skipIf(!API_KEY)('Dogfood e2e eval (Agent SDK)', () => {
 
   it('completes without hard failure', () => {
     expect(evalResult.result, 'No result message received').toBeTruthy();
-    const acceptable = ['success', 'error_max_turns'];
+    const acceptable = ['success', 'error_max_turns', 'error_max_budget_usd'];
     expect(
       acceptable,
       `Agent failed unexpectedly: ${evalResult.result!.subtype}`
