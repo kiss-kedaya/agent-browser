@@ -34,6 +34,8 @@ __pycache__/
 *.png
 *.jpeg
 *.jpg
+*.webm
+test/e2e/.dogfood-output/
 
 # Package manager
 package-lock.json
