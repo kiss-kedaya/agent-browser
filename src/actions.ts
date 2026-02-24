@@ -884,6 +884,7 @@ async function handleScroll(command: ScrollCommand, browser: BrowserManager): Pr
 
   let deltaX = command.x ?? 0;
   let deltaY = command.y ?? 0;
+  const hasExplicitDelta = command.x !== undefined || command.y !== undefined;
 
   if (command.direction) {
     const amount = command.amount ?? 100;
@@ -907,7 +908,7 @@ async function handleScroll(command: ScrollCommand, browser: BrowserManager): Pr
     const element = browser.getLocator(command.selector);
     await element.scrollIntoViewIfNeeded();
 
-    if (deltaX !== 0 || deltaY !== 0) {
+    if (hasExplicitDelta || deltaX !== 0 || deltaY !== 0) {
       await element.evaluate(
         (el, { x, y }) => {
           el.scrollBy(x, y);

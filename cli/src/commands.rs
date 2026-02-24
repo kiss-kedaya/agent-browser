@@ -308,6 +308,11 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
                         if let Some(s) = rest.get(i + 1) {
                             obj.insert("selector".to_string(), json!(s));
                             i += 1;
+                        } else {
+                            return Err(ParseError::MissingArguments {
+                                context: "scroll --selector".to_string(),
+                                usage: "scroll [direction] [amount] [--selector <sel>]",
+                            });
                         }
                     }
                     arg if arg.starts_with('-') => {}
@@ -3537,5 +3542,15 @@ mod tests {
         assert_eq!(cmd["direction"], "down");
         assert_eq!(cmd["amount"], 300);
         assert_eq!(cmd["selector"], ".content");
+    }
+
+    #[test]
+    fn test_scroll_selector_missing_value() {
+        let result = parse_command(&args("scroll down 500 --selector"), &default_flags());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ParseError::MissingArguments { .. }
+        ));
     }
 }
