@@ -561,6 +561,114 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
         // === Close ===
         "close" | "quit" | "exit" => Ok(json!({ "id": id, "action": "close" })),
 
+        // === Authentication Vault ===
+        "auth" => {
+            let sub = rest.first().map(|s| s.as_ref());
+            match sub {
+                Some("save") => {
+                    let name = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth save".to_string(),
+                        usage: "agent-browser auth save <name> --url <url> --username <user> --password <pass>",
+                    })?;
+
+                    let mut url = None;
+                    let mut username = None;
+                    let mut password = None;
+                    let mut username_selector = None;
+                    let mut password_selector = None;
+                    let mut submit_selector = None;
+
+                    let mut j = 2;
+                    while j < rest.len() {
+                        match rest[j].as_ref() {
+                            "--url" => { url = rest.get(j + 1).cloned(); j += 1; }
+                            "--username" => { username = rest.get(j + 1).cloned(); j += 1; }
+                            "--password" => { password = rest.get(j + 1).cloned(); j += 1; }
+                            "--username-selector" => { username_selector = rest.get(j + 1).cloned(); j += 1; }
+                            "--password-selector" => { password_selector = rest.get(j + 1).cloned(); j += 1; }
+                            "--submit-selector" => { submit_selector = rest.get(j + 1).cloned(); j += 1; }
+                            _ => {}
+                        }
+                        j += 1;
+                    }
+
+                    let url_val = url.ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth save".to_string(),
+                        usage: "agent-browser auth save <name> --url <url> --username <user> --password <pass>",
+                    })?;
+                    let user_val = username.ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth save".to_string(),
+                        usage: "agent-browser auth save <name> --url <url> --username <user> --password <pass>",
+                    })?;
+                    let pass_val = password.ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth save".to_string(),
+                        usage: "agent-browser auth save <name> --url <url> --username <user> --password <pass>",
+                    })?;
+
+                    let mut cmd = json!({
+                        "id": id,
+                        "action": "auth_save",
+                        "name": name,
+                        "url": url_val,
+                        "username": user_val,
+                        "password": pass_val,
+                    });
+                    if let Some(us) = username_selector {
+                        cmd["usernameSelector"] = json!(us);
+                    }
+                    if let Some(ps) = password_selector {
+                        cmd["passwordSelector"] = json!(ps);
+                    }
+                    if let Some(ss) = submit_selector {
+                        cmd["submitSelector"] = json!(ss);
+                    }
+                    Ok(cmd)
+                }
+                Some("login") => {
+                    let name = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth login".to_string(),
+                        usage: "agent-browser auth login <name>",
+                    })?;
+                    Ok(json!({ "id": id, "action": "auth_login", "name": name }))
+                }
+                Some("list") => Ok(json!({ "id": id, "action": "auth_list" })),
+                Some("delete") | Some("remove") => {
+                    let name = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth delete".to_string(),
+                        usage: "agent-browser auth delete <name>",
+                    })?;
+                    Ok(json!({ "id": id, "action": "auth_delete", "name": name }))
+                }
+                Some("show") => {
+                    let name = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                        context: "auth show".to_string(),
+                        usage: "agent-browser auth show <name>",
+                    })?;
+                    Ok(json!({ "id": id, "action": "auth_show", "name": name }))
+                }
+                _ => Err(ParseError::UnknownSubcommand {
+                    subcommand: sub.unwrap_or("(none)").to_string(),
+                    valid_options: &["save", "login", "list", "delete", "show"],
+                }),
+            }
+        }
+
+        // === Action Confirmation ===
+        "confirm" => {
+            let cid = rest.first().ok_or_else(|| ParseError::MissingArguments {
+                context: "confirm".to_string(),
+                usage: "agent-browser confirm <confirmation-id>",
+            })?;
+            Ok(json!({ "id": id, "action": "confirm", "confirmationId": cid }))
+        }
+        "deny" => {
+            let cid = rest.first().ok_or_else(|| ParseError::MissingArguments {
+                context: "deny".to_string(),
+                usage: "agent-browser deny <confirmation-id>",
+            })?;
+            Ok(json!({ "id": id, "action": "deny", "confirmationId": cid }))
+        }
+
         // === Connect (CDP) ===
         "connect" => {
             let endpoint = rest.first().ok_or_else(|| ParseError::MissingArguments {
@@ -1936,6 +2044,12 @@ mod tests {
             annotate: false,
             color_scheme: None,
             download_path: None,
+            content_boundaries: false,
+            max_output: None,
+            allowed_domains: None,
+            action_policy: None,
+            confirm_actions: None,
+            confirm_interactive: false,
         }
     }
 

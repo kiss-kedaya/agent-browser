@@ -21,6 +21,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import type { LaunchCommand, TraceEvent } from './types.js';
 import { type RefMap, type EnhancedSnapshot, getEnhancedSnapshot, parseRef } from './snapshot.js';
 import { safeHeaderMerge } from './state-utils.js';
+import { isDomainAllowed, installDomainFilter, parseDomainList } from './domain-filter.js';
 import {
   getEncryptionKey,
   isEncryptedPayload,
@@ -117,6 +118,7 @@ export class BrowserManager {
   private scopedHeaderRoutes: Map<string, (route: Route) => Promise<void>> = new Map();
   private colorScheme: 'light' | 'dark' | 'no-preference' | null = null;
   private downloadPath: string | null = null;
+  private allowedDomains: string[] = [];
 
   /**
    * Set the persistent color scheme preference.
@@ -244,6 +246,24 @@ export class BrowserManager {
    */
   isRef(selector: string): boolean {
     return parseRef(selector) !== null;
+  }
+
+  /**
+   * Check if a URL is allowed by the domain allowlist.
+   * Throws if the URL's domain is blocked. No-op if no allowlist is set.
+   */
+  checkDomainAllowed(url: string): void {
+    if (this.allowedDomains.length === 0) return;
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      if (!isDomainAllowed(hostname, this.allowedDomains)) {
+        throw new Error(`Navigation blocked: ${hostname} is not in the allowed domains list`);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('Navigation blocked:')) {
+        throw err;
+      }
+    }
   }
 
   /**
@@ -1178,6 +1198,15 @@ export class BrowserManager {
       this.downloadPath = options.downloadPath;
     }
 
+    if (options.allowedDomains && options.allowedDomains.length > 0) {
+      this.allowedDomains = options.allowedDomains.map((d: string) => d.toLowerCase());
+    } else {
+      const envDomains = process.env.AGENT_BROWSER_ALLOWED_DOMAINS;
+      if (envDomains) {
+        this.allowedDomains = parseDomainList(envDomains);
+      }
+    }
+
     if (this.downloadPath && (cdpEndpoint || options.autoConnect)) {
       const warning =
         "--download-path is ignored when connecting via CDP or auto-connect (downloads use the remote browser's configuration)";
@@ -1405,6 +1434,10 @@ export class BrowserManager {
     context.setDefaultTimeout(getDefaultTimeout());
     this.contexts.push(context);
     this.setupContextTracking(context);
+
+    if (this.allowedDomains.length > 0) {
+      await installDomainFilter(context, this.allowedDomains);
+    }
 
     const page = context.pages()[0] ?? (await context.newPage());
     // Only add if not already tracked (setupContextTracking may have already added it via 'page' event)
@@ -1737,6 +1770,10 @@ export class BrowserManager {
     context.setDefaultTimeout(getDefaultTimeout());
     this.contexts.push(context);
     this.setupContextTracking(context);
+
+    if (this.allowedDomains.length > 0) {
+      await installDomainFilter(context, this.allowedDomains);
+    }
 
     const page = await context.newPage();
     // Only add if not already tracked (setupContextTracking may have already added it via 'page' event)

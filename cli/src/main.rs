@@ -20,7 +20,7 @@ use commands::{gen_id, parse_command, ParseError};
 use connection::{ensure_daemon, get_socket_dir, send_command};
 use flags::{clean_args, parse_flags};
 use install::run_install;
-use output::{print_command_help, print_help, print_response, print_version};
+use output::{print_command_help, print_help, print_response_with_opts, print_version, OutputOptions};
 
 fn parse_proxy(proxy_str: &str) -> serde_json::Value {
     let Some(protocol_end) = proxy_str.find("://") else {
@@ -227,6 +227,9 @@ fn main() {
         flags.device.as_deref(),
         flags.session_name.as_deref(),
         flags.download_path.as_deref(),
+        flags.allowed_domains.as_deref(),
+        flags.action_policy.as_deref(),
+        flags.confirm_actions.as_deref(),
     ) {
         Ok(result) => result,
         Err(e) => {
@@ -588,6 +591,11 @@ fn main() {
             launch_cmd["downloadPath"] = json!(dp);
         }
 
+        if let Some(ref domains) = flags.allowed_domains {
+            let domain_list: Vec<&str> = domains.split(',').map(|d| d.trim()).filter(|d| !d.is_empty()).collect();
+            launch_cmd["allowedDomains"] = json!(domain_list);
+        }
+
         match send_command(launch_cmd, &flags.session) {
             Ok(resp) if !resp.success => {
                 // Launch command failed (e.g., invalid state file, profile error)
@@ -619,12 +627,61 @@ fn main() {
         }
     }
 
+    let output_opts = OutputOptions {
+        json: flags.json,
+        content_boundaries: flags.content_boundaries,
+        max_output: flags.max_output,
+    };
+
     match send_command(cmd.clone(), &flags.session) {
         Ok(resp) => {
             let success = resp.success;
+            // Handle interactive confirmation
+            if flags.confirm_interactive {
+                if let Some(data) = &resp.data {
+                    if data.get("confirmation_required").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        let desc = data.get("description").and_then(|v| v.as_str()).unwrap_or("unknown action");
+                        let category = data.get("category").and_then(|v| v.as_str()).unwrap_or("");
+                        let cid = data.get("confirmation_id").and_then(|v| v.as_str()).unwrap_or("");
+
+                        eprintln!("[agent-browser] Action requires confirmation:");
+                        eprintln!("  {}: {}", category, desc);
+                        eprint!("  Allow? [y/N]: ");
+
+                        let mut input = String::new();
+                        let approved = if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                            std::io::stdin().read_line(&mut input).is_ok()
+                                && matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+                        } else {
+                            false
+                        };
+
+                        let confirm_cmd = if approved {
+                            json!({ "id": gen_id(), "action": "confirm", "confirmationId": cid })
+                        } else {
+                            json!({ "id": gen_id(), "action": "deny", "confirmationId": cid })
+                        };
+
+                        match send_command(confirm_cmd, &flags.session) {
+                            Ok(r) => {
+                                if !approved {
+                                    eprintln!("{} Action denied", color::error_indicator());
+                                    exit(1);
+                                }
+                                print_response_with_opts(&r, None, &output_opts);
+                            }
+                            Err(e) => {
+                                eprintln!("{} {}", color::error_indicator(), e);
+                                exit(1);
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
             // Extract action for context-specific output handling
             let action = cmd.get("action").and_then(|v| v.as_str());
-            print_response(&resp, flags.json, action);
+            print_response_with_opts(&resp, action, &output_opts);
             if !success {
                 exit(1);
             }

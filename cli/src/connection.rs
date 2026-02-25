@@ -221,6 +221,9 @@ pub fn ensure_daemon(
     device: Option<&str>,
     session_name: Option<&str>,
     download_path: Option<&str>,
+    allowed_domains: Option<&str>,
+    action_policy: Option<&str>,
+    confirm_actions: Option<&str>,
 ) -> Result<DaemonResult, String> {
     // Check if daemon is running AND responsive
     if is_daemon_running(session) && daemon_ready(session) {
@@ -369,6 +372,18 @@ pub fn ensure_daemon(
             cmd.env("AGENT_BROWSER_DOWNLOAD_PATH", dp);
         }
 
+        if let Some(ad) = allowed_domains {
+            cmd.env("AGENT_BROWSER_ALLOWED_DOMAINS", ad);
+        }
+
+        if let Some(ap) = action_policy {
+            cmd.env("AGENT_BROWSER_ACTION_POLICY", ap);
+        }
+
+        if let Some(ca) = confirm_actions {
+            cmd.env("AGENT_BROWSER_CONFIRM_ACTIONS", ca);
+        }
+
         // Create new process group and session to fully detach
         unsafe {
             cmd.pre_exec(|| {
@@ -454,6 +469,18 @@ pub fn ensure_daemon(
 
         if let Some(dp) = download_path {
             cmd.env("AGENT_BROWSER_DOWNLOAD_PATH", dp);
+        }
+
+        if let Some(ad) = allowed_domains {
+            cmd.env("AGENT_BROWSER_ALLOWED_DOMAINS", ad);
+        }
+
+        if let Some(ap) = action_policy {
+            cmd.env("AGENT_BROWSER_ACTION_POLICY", ap);
+        }
+
+        if let Some(ca) = confirm_actions {
+            cmd.env("AGENT_BROWSER_CONFIRM_ACTIONS", ca);
         }
 
         // CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS

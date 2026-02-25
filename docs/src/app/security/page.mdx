@@ -1,0 +1,192 @@
+import { pageMetadata } from "@/lib/page-metadata"
+export const metadata = pageMetadata("security")
+
+# Security
+
+agent-browser includes security features to protect against credential exposure, prompt injection via untrusted page content, and unauthorized browser actions.
+
+## Authentication Vault
+
+Store credentials locally and reference them by name. The LLM never sees passwords.
+
+```bash
+# Save credentials (encrypted if AGENT_BROWSER_ENCRYPTION_KEY is set)
+agent-browser auth save github --url https://github.com/login --username user --password pass
+
+# Login using saved credentials
+agent-browser auth login github
+
+# List saved profiles (names and URLs only, no secrets)
+agent-browser auth list
+
+# Show profile metadata
+agent-browser auth show github
+
+# Delete a profile
+agent-browser auth delete github
+```
+
+Custom selectors can be specified if auto-detection fails:
+
+```bash
+agent-browser auth save myapp \
+  --url https://app.example.com/login \
+  --username user --password pass \
+  --username-selector "#email" \
+  --password-selector "#password" \
+  --submit-selector "button.login"
+```
+
+Profiles are stored in `~/.agent-browser/auth/` and encrypted with AES-256-GCM when `AGENT_BROWSER_ENCRYPTION_KEY` is set.
+
+## Content Boundary Markers
+
+When `--content-boundaries` is enabled, all page-sourced output is wrapped in structural markers so LLMs can distinguish tool output from untrusted page content:
+
+```
+--- AGENT_BROWSER_PAGE_CONTENT origin=https://example.com ---
+[snapshot / text / html / eval output here]
+--- END_AGENT_BROWSER_PAGE_CONTENT ---
+```
+
+Enable via flag or environment variable:
+
+```bash
+agent-browser --content-boundaries snapshot
+# or
+export AGENT_BROWSER_CONTENT_BOUNDARIES=1
+```
+
+Affected output types: `snapshot`, `get text`, `get html`, `eval`, `console`.
+
+## Domain Allowlist
+
+Restrict which domains the browser can navigate to, preventing redirect-based attacks:
+
+```bash
+agent-browser --allowed-domains "example.com,*.example.com,github.com" open https://example.com
+# or
+export AGENT_BROWSER_ALLOWED_DOMAINS="example.com,*.example.com"
+```
+
+Supports exact match (`github.com`) and wildcard prefix (`*.example.com`). When navigation is blocked, the command returns an error.
+
+Config file:
+
+```json
+{
+  "allowedDomains": ["example.com", "*.example.com", "github.com"]
+}
+```
+
+## Action Policy
+
+Gate actions using a static policy file. The policy is enforced by the daemon -- denied actions fail immediately.
+
+```bash
+agent-browser --action-policy ./policy.json open https://example.com
+# or
+export AGENT_BROWSER_ACTION_POLICY=./policy.json
+```
+
+Example policy (permissive with specific denials):
+
+```json
+{
+  "default": "allow",
+  "deny": ["eval", "download", "upload"]
+}
+```
+
+Example policy (restrictive):
+
+```json
+{
+  "default": "deny",
+  "allow": ["navigate", "snapshot", "click", "scroll", "wait", "get"]
+}
+```
+
+<table>
+  <thead>
+    <tr><th>Category</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>navigate</code></td><td>open, back, forward, reload, tab new</td></tr>
+    <tr><td><code>click</code></td><td>click, dblclick, tap</td></tr>
+    <tr><td><code>fill</code></td><td>fill, type, keyboard type/inserttext, select, check, uncheck</td></tr>
+    <tr><td><code>eval</code></td><td>eval, evalhandle, addscript, addinitscript</td></tr>
+    <tr><td><code>download</code></td><td>download, waitfordownload</td></tr>
+    <tr><td><code>upload</code></td><td>upload</td></tr>
+    <tr><td><code>snapshot</code></td><td>snapshot, screenshot, pdf, diff</td></tr>
+    <tr><td><code>scroll</code></td><td>scroll, scrollintoview</td></tr>
+    <tr><td><code>wait</code></td><td>wait, waitforurl, waitforloadstate</td></tr>
+    <tr><td><code>get</code></td><td>get text/html/url/title, count, isvisible, etc.</td></tr>
+    <tr><td><code>network</code></td><td>network route/unroute, requests</td></tr>
+    <tr><td><code>state</code></td><td>state save/load, cookies set, storage set</td></tr>
+  </tbody>
+</table>
+
+## Action Confirmation
+
+For actions that require explicit approval, use `--confirm-actions` to specify categories that require confirmation:
+
+```bash
+# Orchestrator mode: returns confirmation_required response
+agent-browser --confirm-actions eval,download eval "document.title"
+
+# Then approve or deny:
+agent-browser confirm c_8f3a1234
+agent-browser deny c_8f3a1234
+```
+
+For interactive (human-in-the-loop) confirmation:
+
+```bash
+agent-browser --confirm-actions eval,download --confirm-interactive eval "document.title"
+# Prompts: Allow? [y/N]
+```
+
+Pending confirmations auto-deny after 60 seconds.
+
+## Output Length Limits
+
+Prevent context flooding by truncating large page outputs:
+
+```bash
+agent-browser --max-output 50000 get text body
+# or
+export AGENT_BROWSER_MAX_OUTPUT=50000
+```
+
+Affected output types: `snapshot`, `get text`, `get html`, `eval`, `console`.
+
+## Environment Variables
+
+<table>
+  <thead>
+    <tr><th>Variable</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>AGENT_BROWSER_CONTENT_BOUNDARIES</code></td><td>Wrap page output in boundary markers</td></tr>
+    <tr><td><code>AGENT_BROWSER_MAX_OUTPUT</code></td><td>Max characters for page output</td></tr>
+    <tr><td><code>AGENT_BROWSER_ALLOWED_DOMAINS</code></td><td>Comma-separated allowed domain patterns</td></tr>
+    <tr><td><code>AGENT_BROWSER_ACTION_POLICY</code></td><td>Path to action policy JSON file</td></tr>
+    <tr><td><code>AGENT_BROWSER_CONFIRM_ACTIONS</code></td><td>Comma-separated action categories requiring confirmation</td></tr>
+    <tr><td><code>AGENT_BROWSER_CONFIRM_INTERACTIVE</code></td><td>Enable interactive confirmation prompts</td></tr>
+    <tr><td><code>AGENT_BROWSER_ENCRYPTION_KEY</code></td><td>64-char hex key for AES-256-GCM encryption (auth vault + sessions)</td></tr>
+  </tbody>
+</table>
+
+## Recommended Configuration
+
+For production AI agent deployments:
+
+```json
+{
+  "contentBoundaries": true,
+  "maxOutput": 50000,
+  "allowedDomains": ["your-app.com", "*.your-app.com"],
+  "actionPolicy": "./policy.json"
+}
+```

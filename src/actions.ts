@@ -5,6 +5,22 @@ import { mkdirSync } from 'node:fs';
 import type { BrowserManager, ScreencastFrame } from './browser.js';
 import { getAppDir } from './daemon.js';
 import {
+  type ActionPolicy,
+  checkPolicy,
+  describeAction,
+  getActionCategory,
+  loadPolicyFile,
+} from './action-policy.js';
+import { requestConfirmation, resolveConfirmation } from './confirmation.js';
+import {
+  saveAuthProfile,
+  getAuthProfile,
+  getAuthProfileMeta,
+  listAuthProfiles,
+  deleteAuthProfile,
+  updateLastLogin,
+} from './auth-vault.js';
+import {
   getSessionsDir,
   readStateFile,
   isValidSessionName,
@@ -126,6 +142,13 @@ import type {
   DiffSnapshotCommand,
   DiffScreenshotCommand,
   DiffUrlCommand,
+  AuthSaveCommand,
+  AuthLoginCommand,
+  AuthListCommand,
+  AuthDeleteCommand,
+  AuthShowCommand,
+  ConfirmCommand,
+  DenyCommand,
   Annotation,
   NavigateData,
   ScreenshotData,
@@ -228,11 +251,75 @@ export function toAIFriendlyError(error: unknown, selector: string): Error {
   return error instanceof Error ? error : new Error(message);
 }
 
+let actionPolicy: ActionPolicy | null = null;
+let confirmCategories = new Set<string>();
+
+export function initActionPolicy(): void {
+  const policyPath = process.env.AGENT_BROWSER_ACTION_POLICY;
+  if (policyPath) {
+    try {
+      actionPolicy = loadPolicyFile(policyPath);
+    } catch (err) {
+      console.error(
+        `[ERROR] Failed to load action policy from ${policyPath}: ${err instanceof Error ? err.message : err}`
+      );
+      process.exit(1);
+    }
+  }
+
+  const confirmActionsEnv = process.env.AGENT_BROWSER_CONFIRM_ACTIONS;
+  if (confirmActionsEnv) {
+    confirmCategories = new Set(
+      confirmActionsEnv
+        .split(',')
+        .map((c) => c.trim().toLowerCase())
+        .filter((c) => c.length > 0)
+    );
+  }
+}
+
 /**
  * Execute a command and return a response
  */
 export async function executeCommand(command: Command, browser: BrowserManager): Promise<Response> {
   try {
+    // Handle confirm/deny actions (bypass policy check)
+    if (command.action === 'confirm') {
+      return handleConfirm(command);
+    }
+    if (command.action === 'deny') {
+      return handleDeny(command);
+    }
+
+    // Policy enforcement
+    {
+      const decision = checkPolicy(command.action, actionPolicy, confirmCategories);
+      if (decision === 'deny') {
+        const category = getActionCategory(command.action);
+        return errorResponse(command.id, `Action denied by policy: '${category}' is not allowed`);
+      }
+      if (decision === 'confirm') {
+        const category = getActionCategory(command.action);
+        const description = describeAction(
+          command.action,
+          command as unknown as Record<string, unknown>
+        );
+        const { confirmationId } = requestConfirmation(
+          command.action,
+          category,
+          description,
+          command as unknown as Record<string, unknown>
+        );
+        return successResponse(command.id, {
+          confirmation_required: true,
+          action: command.action,
+          category,
+          description,
+          confirmation_id: confirmationId,
+        });
+      }
+    }
+
     switch (command.action) {
       case 'launch':
         return await handleLaunch(command, browser);
@@ -500,6 +587,16 @@ export async function executeCommand(command: Command, browser: BrowserManager):
         return await handleDiffScreenshot(command, browser);
       case 'diff_url':
         return await handleDiffUrl(command, browser);
+      case 'auth_save':
+        return handleAuthSave(command);
+      case 'auth_login':
+        return await handleAuthLogin(command, browser);
+      case 'auth_list':
+        return handleAuthList(command);
+      case 'auth_delete':
+        return handleAuthDelete(command);
+      case 'auth_show':
+        return handleAuthShow(command);
       default: {
         // TypeScript narrows to never here, but we handle it for safety
         const unknownCommand = command as { id: string; action: string };
@@ -524,6 +621,8 @@ async function handleNavigate(
   command: NavigateCommand,
   browser: BrowserManager
 ): Promise<Response<NavigateData>> {
+  browser.checkDomainAllowed(command.url);
+
   const page = browser.getPage();
 
   // If headers are provided, set up scoped headers for this origin
@@ -843,9 +942,11 @@ async function handleSnapshot(
     simpleRefs[ref] = { role: data.role, name: data.name };
   }
 
+  const page = browser.getPage();
   return successResponse(command.id, {
     snapshot: tree || 'Empty page',
     refs: Object.keys(simpleRefs).length > 0 ? simpleRefs : undefined,
+    origin: page.url(),
   });
 }
 
@@ -858,7 +959,7 @@ async function handleEvaluate(
   // Evaluate the script directly as a string expression
   const result = await page.evaluate(command.script);
 
-  return successResponse(command.id, { result });
+  return successResponse(command.id, { result, origin: page.url() });
 }
 
 async function handleWait(command: WaitCommand, browser: BrowserManager): Promise<Response> {
@@ -960,7 +1061,7 @@ async function handleContent(
     html = await page.content();
   }
 
-  return successResponse(command.id, { html });
+  return successResponse(command.id, { html, origin: page.url() });
 }
 
 async function handleClose(
@@ -1478,9 +1579,10 @@ async function handleGetAttribute(
 }
 
 async function handleGetText(command: GetTextCommand, browser: BrowserManager): Promise<Response> {
+  const page = browser.getPage();
   const locator = browser.getLocator(command.selector);
   const text = await locator.textContent();
-  return successResponse(command.id, { text });
+  return successResponse(command.id, { text, origin: page.url() });
 }
 
 async function handleIsVisible(
@@ -1875,8 +1977,9 @@ async function handleConsole(command: ConsoleCommand, browser: BrowserManager): 
     return successResponse(command.id, { cleared: true });
   }
 
+  const page = browser.getPage();
   const messages = browser.getConsoleMessages();
-  return successResponse(command.id, { messages });
+  return successResponse(command.id, { messages, origin: page.url() });
 }
 
 async function handleErrors(command: ErrorsCommand, browser: BrowserManager): Promise<Response> {
@@ -1989,7 +2092,7 @@ async function handleInnerHtml(
 ): Promise<Response> {
   const page = browser.getPage();
   const html = await page.locator(command.selector).innerHTML();
-  return successResponse(command.id, { html });
+  return successResponse(command.id, { html, origin: page.url() });
 }
 
 async function handleInputValue(
@@ -2596,4 +2699,103 @@ async function handleDiffUrl(command: DiffUrlCommand, browser: BrowserManager): 
   }
 
   return successResponse(command.id, result);
+}
+
+function handleAuthSave(command: AuthSaveCommand): Response {
+  const meta = saveAuthProfile({
+    name: command.name,
+    url: command.url,
+    username: command.username,
+    password: command.password,
+    usernameSelector: command.usernameSelector,
+    passwordSelector: command.passwordSelector,
+    submitSelector: command.submitSelector,
+  });
+  return successResponse(command.id, {
+    saved: true,
+    name: meta.name,
+    url: meta.url,
+    username: meta.username,
+  });
+}
+
+async function handleAuthLogin(
+  command: AuthLoginCommand,
+  browser: BrowserManager
+): Promise<Response> {
+  const profile = getAuthProfile(command.name);
+  if (!profile) {
+    return errorResponse(command.id, `Auth profile '${command.name}' not found`);
+  }
+
+  const page = browser.getPage();
+  await page.goto(profile.url, { waitUntil: 'load' });
+
+  // Use custom selectors if provided, otherwise auto-detect
+  const userSel =
+    profile.usernameSelector ||
+    'input[type="email"], input[type="text"][name*="user"], input[name*="email"], input[name*="login"]';
+  const passSel = profile.passwordSelector || 'input[type="password"]';
+  const submitSel =
+    profile.submitSelector ||
+    'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in")';
+
+  try {
+    await page.locator(userSel).first().fill(profile.username);
+    await page.locator(passSel).first().fill(profile.password);
+    await page.locator(submitSel).first().click();
+    await page.waitForLoadState('load');
+  } catch (err) {
+    return errorResponse(
+      command.id,
+      `Auth login failed for '${command.name}': ${err instanceof Error ? err.message : err}. ` +
+        `Try specifying custom selectors with auth save --username-selector/--password-selector/--submit-selector`
+    );
+  }
+
+  updateLastLogin(command.name);
+
+  return successResponse(command.id, {
+    loggedIn: true,
+    name: command.name,
+    url: page.url(),
+    title: await page.title(),
+  });
+}
+
+function handleAuthList(command: AuthListCommand): Response {
+  const profiles = listAuthProfiles();
+  return successResponse(command.id, { profiles });
+}
+
+function handleAuthDelete(command: AuthDeleteCommand): Response {
+  const deleted = deleteAuthProfile(command.name);
+  if (!deleted) {
+    return errorResponse(command.id, `Auth profile '${command.name}' not found`);
+  }
+  return successResponse(command.id, { deleted: true, name: command.name });
+}
+
+function handleAuthShow(command: AuthShowCommand): Response {
+  const meta = getAuthProfileMeta(command.name);
+  if (!meta) {
+    return errorResponse(command.id, `Auth profile '${command.name}' not found`);
+  }
+  return successResponse(command.id, { profile: meta });
+}
+
+function handleConfirm(command: ConfirmCommand): Response {
+  const found = resolveConfirmation(command.confirmationId, true);
+  if (!found) {
+    return errorResponse(command.id, `No pending confirmation with id '${command.confirmationId}'`);
+  }
+  return successResponse(command.id, { confirmed: true });
+}
+
+function handleDeny(command: DenyCommand): Response {
+  const found = resolveConfirmation(command.confirmationId, false);
+  if (!found) {
+    return errorResponse(command.id, `No pending confirmation with id '${command.confirmationId}'`);
+  }
+  return successResponse(command.id, { denied: true });
 }

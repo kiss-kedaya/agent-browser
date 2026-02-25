@@ -1,0 +1,168 @@
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  unlinkSync,
+} from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {
+  getEncryptionKey,
+  encryptData,
+  decryptData,
+  isEncryptedPayload,
+  type EncryptedPayload,
+} from './encryption.js';
+
+const AUTH_DIR = 'auth';
+
+interface AuthProfile {
+  name: string;
+  url: string;
+  username: string;
+  password: string;
+  usernameSelector?: string;
+  passwordSelector?: string;
+  submitSelector?: string;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+export interface AuthProfileMeta {
+  name: string;
+  url: string;
+  username: string;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+function getAuthDir(): string {
+  const dir = path.join(os.homedir(), '.agent-browser', AUTH_DIR);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  return dir;
+}
+
+function profilePath(name: string): string {
+  return path.join(getAuthDir(), `${name}.json`);
+}
+
+function readProfile(name: string): AuthProfile | null {
+  const p = profilePath(name);
+  if (!existsSync(p)) return null;
+
+  const raw = readFileSync(p, 'utf-8');
+  const parsed = JSON.parse(raw);
+
+  if (isEncryptedPayload(parsed)) {
+    const key = getEncryptionKey();
+    if (!key) {
+      throw new Error('AGENT_BROWSER_ENCRYPTION_KEY is required to read encrypted auth profiles');
+    }
+    const decrypted = decryptData(parsed as EncryptedPayload, key);
+    return JSON.parse(decrypted) as AuthProfile;
+  }
+
+  return parsed as AuthProfile;
+}
+
+function writeProfile(profile: AuthProfile): void {
+  const key = getEncryptionKey();
+  const serialized = JSON.stringify(profile, null, 2);
+
+  if (key) {
+    const encrypted = encryptData(serialized, key);
+    writeFileSync(profilePath(profile.name), JSON.stringify(encrypted, null, 2), {
+      mode: 0o600,
+    });
+  } else {
+    writeFileSync(profilePath(profile.name), serialized, { mode: 0o600 });
+  }
+}
+
+export function saveAuthProfile(opts: {
+  name: string;
+  url: string;
+  username: string;
+  password: string;
+  usernameSelector?: string;
+  passwordSelector?: string;
+  submitSelector?: string;
+}): AuthProfileMeta {
+  const profile: AuthProfile = {
+    name: opts.name,
+    url: opts.url,
+    username: opts.username,
+    password: opts.password,
+    usernameSelector: opts.usernameSelector,
+    passwordSelector: opts.passwordSelector,
+    submitSelector: opts.submitSelector,
+    createdAt: new Date().toISOString(),
+  };
+
+  writeProfile(profile);
+
+  return {
+    name: profile.name,
+    url: profile.url,
+    username: profile.username,
+    createdAt: profile.createdAt,
+  };
+}
+
+export function getAuthProfile(name: string): AuthProfile | null {
+  return readProfile(name);
+}
+
+export function getAuthProfileMeta(name: string): AuthProfileMeta | null {
+  const profile = readProfile(name);
+  if (!profile) return null;
+  return {
+    name: profile.name,
+    url: profile.url,
+    username: profile.username,
+    createdAt: profile.createdAt,
+    lastLoginAt: profile.lastLoginAt,
+  };
+}
+
+export function listAuthProfiles(): AuthProfileMeta[] {
+  const dir = getAuthDir();
+  const files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+  const profiles: AuthProfileMeta[] = [];
+
+  for (const file of files) {
+    const name = file.replace(/\.json$/, '');
+    try {
+      const meta = getAuthProfileMeta(name);
+      if (meta) profiles.push(meta);
+    } catch {
+      profiles.push({
+        name,
+        url: '(encrypted)',
+        username: '(encrypted)',
+        createdAt: '(unknown)',
+      });
+    }
+  }
+
+  return profiles;
+}
+
+export function deleteAuthProfile(name: string): boolean {
+  const p = profilePath(name);
+  if (!existsSync(p)) return false;
+  unlinkSync(p);
+  return true;
+}
+
+export function updateLastLogin(name: string): void {
+  const profile = readProfile(name);
+  if (profile) {
+    profile.lastLoginAt = new Date().toISOString();
+    writeProfile(profile);
+  }
+}
