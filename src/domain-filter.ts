@@ -26,8 +26,9 @@ export function parseDomainList(raw: string): string[] {
 }
 
 /**
- * Build the init script source that monkey-patches WebSocket and EventSource
- * to block connections to non-allowed domains. Exported for testing.
+ * Build the init script source that monkey-patches WebSocket, EventSource,
+ * and navigator.sendBeacon to block connections to non-allowed domains.
+ * Exported for testing.
  */
 export function buildWebSocketFilterScript(allowedDomains: string[]): string {
   const serialized = JSON.stringify(allowedDomains);
@@ -92,6 +93,15 @@ export function buildWebSocketFilterScript(allowedDomains: string[]): string {
     EventSource.OPEN = _OrigES.OPEN;
     EventSource.CLOSED = _OrigES.CLOSED;
   }
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    var _origSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function(url, data) {
+      if (!_checkUrl(url)) {
+        return false;
+      }
+      return _origSendBeacon(url, data);
+    };
+  }
 })();`;
 }
 
@@ -102,11 +112,11 @@ export function buildWebSocketFilterScript(allowedDomains: string[]): string {
  * Non-http(s) schemes (data:, blob:, etc.) are allowed for sub-resources
  * but blocked for document navigations.
  *
- * Also installs an init script that patches WebSocket and EventSource
- * constructors to block connections to non-allowed domains. This is a
- * best-effort defense: if eval is permitted by action policy, page scripts
- * could theoretically restore the original constructors. Denying the eval
- * action category closes that loophole.
+ * Also installs an init script that patches WebSocket, EventSource, and
+ * navigator.sendBeacon to block connections to non-allowed domains. This is
+ * a best-effort defense: if eval is permitted by action policy, page scripts
+ * could theoretically restore the originals. Denying the eval action
+ * category closes that loophole.
  */
 export async function installDomainFilter(
   context: BrowserContext,

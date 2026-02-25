@@ -26,15 +26,16 @@ pub struct OutputOptions {
 fn truncate_if_needed(content: &str, max: Option<usize>) -> String {
     match max {
         Some(limit) => {
-            let total_chars = content.chars().count();
-            if total_chars <= limit {
-                return content.to_string();
+            match content.char_indices().nth(limit).map(|(i, _)| i) {
+                Some(byte_offset) => {
+                    let remaining = content[byte_offset..].chars().count();
+                    format!(
+                        "{}\n[truncated: showing {} of {} chars. Use --max-output to adjust]",
+                        &content[..byte_offset], limit, limit + remaining
+                    )
+                }
+                None => content.to_string(),
             }
-            let truncated: String = content.chars().take(limit).collect();
-            format!(
-                "{}\n[truncated: showing {} of {} chars. Use --max-output to adjust]",
-                truncated, limit, total_chars
-            )
         }
         _ => content.to_string(),
     }

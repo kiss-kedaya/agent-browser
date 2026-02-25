@@ -83,11 +83,12 @@ describe('domain-filter', () => {
       expect(script).toContain('["a.com"]');
     });
 
-    it('should include WebSocket and EventSource patches', () => {
+    it('should include WebSocket, EventSource, and sendBeacon patches', () => {
       const script = buildWebSocketFilterScript(['a.com']);
       expect(script).toContain('WebSocket');
       expect(script).toContain('EventSource');
       expect(script).toContain('SecurityError');
+      expect(script).toContain('sendBeacon');
     });
 
     it('should handle empty allowlist', () => {

@@ -203,6 +203,10 @@ pub struct DaemonResult {
     pub already_running: bool,
 }
 
+/// Options forwarded to the daemon process as environment variables.
+/// Note: `confirm_interactive` is intentionally absent -- it is a CLI-side
+/// UX concern (prompting the user on stdin) and not a daemon configuration.
+/// The daemon only needs `confirm_actions` to gate action categories.
 pub struct DaemonOptions<'a> {
     pub headed: bool,
     pub executable_path: Option<&'a str>,

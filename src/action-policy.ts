@@ -211,6 +211,8 @@ export function loadPolicyFile(policyPath: string): ActionPolicy {
 let cachedPolicyPath: string | null = null;
 let cachedPolicyMtimeMs = 0;
 let cachedPolicy: ActionPolicy | null = null;
+const RELOAD_CHECK_INTERVAL_MS = 5_000;
+let lastCheckMs = 0;
 
 export function initPolicyReloader(policyPath: string, policy: ActionPolicy): void {
   cachedPolicyPath = resolve(policyPath);
@@ -220,6 +222,10 @@ export function initPolicyReloader(policyPath: string, policy: ActionPolicy): vo
 
 export function reloadPolicyIfChanged(): ActionPolicy | null {
   if (!cachedPolicyPath) return cachedPolicy;
+
+  const now = Date.now();
+  if (now - lastCheckMs < RELOAD_CHECK_INTERVAL_MS) return cachedPolicy;
+  lastCheckMs = now;
 
   try {
     const currentMtime = statSync(cachedPolicyPath).mtimeMs;
@@ -267,7 +273,7 @@ export function describeAction(action: string, command: Record<string, unknown>)
     case 'evalhandle':
       return `Evaluate JavaScript: ${String(command.script ?? '').slice(0, 80)}`;
     case 'fill':
-      return `Fill ${command.selector} with value`;
+      return `Fill ${command.selector}`;
     case 'type':
       return `Type into ${command.selector}`;
     case 'click':

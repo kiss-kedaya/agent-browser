@@ -924,6 +924,9 @@ export class BrowserManager {
       this.browser = browser;
       context.setDefaultTimeout(10000);
       this.contexts.push(context);
+      // Register context tracking before domain filter so new pages created
+      // after this point are tracked. The existing page was created before the
+      // handler is registered, so it won't trigger a duplicate 'page' event.
       this.setupContextTracking(context);
       if (this.allowedDomains.length > 0) {
         await installDomainFilter(context, this.allowedDomains);

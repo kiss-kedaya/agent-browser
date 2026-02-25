@@ -202,7 +202,7 @@ describe('action-policy', () => {
     });
 
     it('should describe fill actions', () => {
-      expect(describeAction('fill', { selector: '#input' })).toBe('Fill #input with value');
+      expect(describeAction('fill', { selector: '#input' })).toBe('Fill #input');
     });
 
     it('should use fallback for unknown actions', () => {
