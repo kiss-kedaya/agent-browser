@@ -1,5 +1,20 @@
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
+use std::sync::OnceLock;
+
 use crate::color;
 use crate::connection::Response;
+
+static BOUNDARY_NONCE: OnceLock<String> = OnceLock::new();
+
+fn get_boundary_nonce() -> &'static str {
+    BOUNDARY_NONCE.get_or_init(|| {
+        let state = RandomState::new();
+        let mut hasher = state.build_hasher();
+        hasher.write_u8(0);
+        format!("{:08x}", hasher.finish() as u32)
+    })
+}
 
 pub struct OutputOptions {
     pub json: bool,
@@ -10,10 +25,17 @@ pub struct OutputOptions {
 fn truncate_if_needed(content: &str, max: Option<usize>) -> String {
     match max {
         Some(limit) if content.len() > limit => {
-            let truncated = &content[..limit];
+            // Find the largest valid UTF-8 char boundary at or before the byte limit
+            let safe_limit = (0..=limit)
+                .rev()
+                .find(|&i| content.is_char_boundary(i))
+                .unwrap_or(0);
+            let truncated = &content[..safe_limit];
+            let total_chars = content.chars().count();
+            let shown_chars = truncated.chars().count();
             format!(
                 "{}\n[truncated: showing {} of {} chars. Use --max-output to adjust]",
-                truncated, limit, content.len()
+                truncated, shown_chars, total_chars
             )
         }
         _ => content.to_string(),
@@ -24,9 +46,10 @@ fn print_with_boundaries(content: &str, origin: Option<&str>, opts: &OutputOptio
     let content = truncate_if_needed(content, opts.max_output);
     if opts.content_boundaries {
         let origin_str = origin.unwrap_or("unknown");
-        println!("--- AGENT_BROWSER_PAGE_CONTENT origin={} ---", origin_str);
+        let nonce = get_boundary_nonce();
+        println!("--- AGENT_BROWSER_PAGE_CONTENT nonce={} origin={} ---", nonce, origin_str);
         println!("{}", content);
-        println!("--- END_AGENT_BROWSER_PAGE_CONTENT ---");
+        println!("--- END_AGENT_BROWSER_PAGE_CONTENT nonce={} ---", nonce);
     } else {
         println!("{}", content);
     }
@@ -616,10 +639,16 @@ pub fn print_response_with_opts(resp: &Response, action: Option<&str>, opts: &Ou
             return;
         }
 
-        // Auth save/login/delete
+        // Auth save/update/login/delete
         if data.get("saved").and_then(|v| v.as_bool()).unwrap_or(false) {
             let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
             println!("{} Auth profile '{}' saved", color::success_indicator(), name);
+            return;
+        }
+        if data.get("updated").and_then(|v| v.as_bool()).unwrap_or(false)
+            && !data.get("saved").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            println!("{} Auth profile '{}' updated", color::success_indicator(), name);
             return;
         }
         if data.get("loggedIn").and_then(|v| v.as_bool()).unwrap_or(false) {

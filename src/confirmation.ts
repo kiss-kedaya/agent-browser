@@ -6,7 +6,6 @@ interface PendingConfirmation {
   category: string;
   description: string;
   command: Record<string, unknown>;
-  resolve: (approved: boolean) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -23,37 +22,34 @@ export function requestConfirmation(
   category: string,
   description: string,
   command: Record<string, unknown>
-): { confirmationId: string; promise: Promise<boolean> } {
+): { confirmationId: string } {
   const id = generateId();
 
-  const promise = new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      resolve(false);
-    }, AUTO_DENY_TIMEOUT_MS);
+  const timer = setTimeout(() => {
+    pending.delete(id);
+  }, AUTO_DENY_TIMEOUT_MS);
 
-    pending.set(id, {
-      id,
-      action,
-      category,
-      description,
-      command,
-      resolve,
-      timer,
-    });
+  pending.set(id, {
+    id,
+    action,
+    category,
+    description,
+    command,
+    timer,
   });
 
-  return { confirmationId: id, promise };
+  return { confirmationId: id };
 }
 
-export function resolveConfirmation(id: string, approved: boolean): boolean {
+export function getAndRemovePending(
+  id: string
+): { command: Record<string, unknown>; action: string } | null {
   const entry = pending.get(id);
-  if (!entry) return false;
+  if (!entry) return null;
 
   clearTimeout(entry.timer);
   pending.delete(id);
-  entry.resolve(approved);
-  return true;
+  return { command: entry.command, action: entry.action };
 }
 
 export function hasPendingConfirmation(id: string): boolean {

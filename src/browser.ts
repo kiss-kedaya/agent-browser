@@ -251,18 +251,24 @@ export class BrowserManager {
   /**
    * Check if a URL is allowed by the domain allowlist.
    * Throws if the URL's domain is blocked. No-op if no allowlist is set.
+   * Blocks non-http(s) schemes and unparseable URLs by default.
    */
   checkDomainAllowed(url: string): void {
     if (this.allowedDomains.length === 0) return;
+
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      throw new Error(`Navigation blocked: non-http(s) scheme in URL "${url}"`);
+    }
+
+    let hostname: string;
     try {
-      const hostname = new URL(url).hostname.toLowerCase();
-      if (!isDomainAllowed(hostname, this.allowedDomains)) {
-        throw new Error(`Navigation blocked: ${hostname} is not in the allowed domains list`);
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('Navigation blocked:')) {
-        throw err;
-      }
+      hostname = new URL(url).hostname.toLowerCase();
+    } catch {
+      throw new Error(`Navigation blocked: unable to parse URL "${url}"`);
+    }
+
+    if (!isDomainAllowed(hostname, this.allowedDomains)) {
+      throw new Error(`Navigation blocked: ${hostname} is not in the allowed domains list`);
     }
   }
 

@@ -876,9 +876,16 @@ const windowNewSchema = baseCommandSchema.extend({
     .optional(),
 });
 
+const authProfileName = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9_-]+$/, {
+    message: 'Profile name must contain only alphanumeric characters, hyphens, and underscores',
+  });
+
 const authSaveSchema = baseCommandSchema.extend({
   action: z.literal('auth_save'),
-  name: z.string().min(1),
+  name: authProfileName,
   url: z.string().min(1),
   username: z.string().min(1),
   password: z.string().min(1),
@@ -889,7 +896,7 @@ const authSaveSchema = baseCommandSchema.extend({
 
 const authLoginSchema = baseCommandSchema.extend({
   action: z.literal('auth_login'),
-  name: z.string().min(1),
+  name: authProfileName,
 });
 
 const authListSchema = baseCommandSchema.extend({
@@ -898,12 +905,12 @@ const authListSchema = baseCommandSchema.extend({
 
 const authDeleteSchema = baseCommandSchema.extend({
   action: z.literal('auth_delete'),
-  name: z.string().min(1),
+  name: authProfileName,
 });
 
 const authShowSchema = baseCommandSchema.extend({
   action: z.literal('auth_show'),
-  name: z.string().min(1),
+  name: authProfileName,
 });
 
 const confirmSchema = baseCommandSchema.extend({

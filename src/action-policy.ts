@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface ActionPolicy {
@@ -151,15 +151,23 @@ const ACTION_CATEGORIES: Record<string, string> = {
   input_keyboard: '_internal',
   input_touch: '_internal',
 
-  // Find/semantic locator actions
-  getbyrole: 'click',
-  getbytext: 'click',
-  getbylabel: 'click',
-  getbyplaceholder: 'click',
-  getbyalttext: 'click',
-  getbytitle: 'click',
-  getbytestid: 'click',
-  nth: 'click',
+  auth_save: '_internal',
+  auth_login: '_internal',
+  auth_list: '_internal',
+  auth_delete: '_internal',
+  auth_show: '_internal',
+  confirm: '_internal',
+  deny: '_internal',
+
+  // Find/semantic locator actions (read-only element resolution)
+  getbyrole: 'get',
+  getbytext: 'get',
+  getbylabel: 'get',
+  getbyplaceholder: 'get',
+  getbyalttext: 'get',
+  getbytitle: 'get',
+  getbytestid: 'get',
+  nth: 'get',
 };
 
 export function getActionCategory(action: string): string {
@@ -180,6 +188,32 @@ export function loadPolicyFile(policyPath: string): ActionPolicy {
   return policy;
 }
 
+let cachedPolicyPath: string | null = null;
+let cachedPolicyMtimeMs = 0;
+let cachedPolicy: ActionPolicy | null = null;
+
+export function initPolicyReloader(policyPath: string, policy: ActionPolicy): void {
+  cachedPolicyPath = resolve(policyPath);
+  cachedPolicyMtimeMs = statSync(cachedPolicyPath).mtimeMs;
+  cachedPolicy = policy;
+}
+
+export function reloadPolicyIfChanged(): ActionPolicy | null {
+  if (!cachedPolicyPath) return cachedPolicy;
+
+  try {
+    const currentMtime = statSync(cachedPolicyPath).mtimeMs;
+    if (currentMtime !== cachedPolicyMtimeMs) {
+      cachedPolicy = loadPolicyFile(cachedPolicyPath);
+      cachedPolicyMtimeMs = currentMtime;
+    }
+  } catch {
+    // File may have been removed; keep using cached policy
+  }
+
+  return cachedPolicy;
+}
+
 export function checkPolicy(
   action: string,
   policy: ActionPolicy | null,
@@ -190,16 +224,16 @@ export function checkPolicy(
   // Internal actions are always allowed
   if (category === '_internal') return 'allow';
 
+  // Explicit deny takes precedence over confirmation
+  if (policy?.deny?.includes(category)) return 'deny';
+
   // Check if this category requires confirmation
   if (confirmCategories.has(category)) return 'confirm';
 
   if (!policy) return 'allow';
 
-  // Explicit allow list takes precedence
+  // Explicit allow list
   if (policy.allow?.includes(category)) return 'allow';
-
-  // Explicit deny list
-  if (policy.deny?.includes(category)) return 'deny';
 
   return policy.default;
 }

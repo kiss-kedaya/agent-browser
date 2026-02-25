@@ -10,8 +10,10 @@ import {
   describeAction,
   getActionCategory,
   loadPolicyFile,
+  initPolicyReloader,
+  reloadPolicyIfChanged,
 } from './action-policy.js';
-import { requestConfirmation, resolveConfirmation } from './confirmation.js';
+import { requestConfirmation, getAndRemovePending } from './confirmation.js';
 import {
   saveAuthProfile,
   getAuthProfile,
@@ -253,12 +255,14 @@ export function toAIFriendlyError(error: unknown, selector: string): Error {
 
 let actionPolicy: ActionPolicy | null = null;
 let confirmCategories = new Set<string>();
+const confirmedActions = new Set<string>();
 
 export function initActionPolicy(): void {
   const policyPath = process.env.AGENT_BROWSER_ACTION_POLICY;
   if (policyPath) {
     try {
       actionPolicy = loadPolicyFile(policyPath);
+      initPolicyReloader(policyPath, actionPolicy);
     } catch (err) {
       console.error(
         `[ERROR] Failed to load action policy from ${policyPath}: ${err instanceof Error ? err.message : err}`
@@ -285,15 +289,20 @@ export async function executeCommand(command: Command, browser: BrowserManager):
   try {
     // Handle confirm/deny actions (bypass policy check)
     if (command.action === 'confirm') {
-      return handleConfirm(command);
+      return await handleConfirm(command, browser);
     }
     if (command.action === 'deny') {
       return handleDeny(command);
     }
 
-    // Policy enforcement
+    // Hot-reload policy file if it changed on disk
+    actionPolicy = reloadPolicyIfChanged();
+
+    // Policy enforcement (skip confirmation gate for re-executed confirmed actions)
     {
-      const decision = checkPolicy(command.action, actionPolicy, confirmCategories);
+      const decision = confirmedActions.has(command.id)
+        ? checkPolicy(command.action, actionPolicy, new Set())
+        : checkPolicy(command.action, actionPolicy, confirmCategories);
       if (decision === 'deny') {
         const category = getActionCategory(command.action);
         return errorResponse(command.id, `Action denied by policy: '${category}' is not allowed`);
@@ -2712,7 +2721,8 @@ function handleAuthSave(command: AuthSaveCommand): Response {
     submitSelector: command.submitSelector,
   });
   return successResponse(command.id, {
-    saved: true,
+    saved: !meta.updated,
+    updated: meta.updated,
     name: meta.name,
     url: meta.url,
     username: meta.username,
@@ -2784,17 +2794,25 @@ function handleAuthShow(command: AuthShowCommand): Response {
   return successResponse(command.id, { profile: meta });
 }
 
-function handleConfirm(command: ConfirmCommand): Response {
-  const found = resolveConfirmation(command.confirmationId, true);
-  if (!found) {
+async function handleConfirm(command: ConfirmCommand, browser: BrowserManager): Promise<Response> {
+  const entry = getAndRemovePending(command.confirmationId);
+  if (!entry) {
     return errorResponse(command.id, `No pending confirmation with id '${command.confirmationId}'`);
   }
-  return successResponse(command.id, { confirmed: true });
+
+  // Re-execute the original command, bypassing the confirmation gate
+  const originalCommand = entry.command as unknown as Command;
+  confirmedActions.add(originalCommand.id);
+  try {
+    return await executeCommand(originalCommand, browser);
+  } finally {
+    confirmedActions.delete(originalCommand.id);
+  }
 }
 
 function handleDeny(command: DenyCommand): Response {
-  const found = resolveConfirmation(command.confirmationId, false);
-  if (!found) {
+  const entry = getAndRemovePending(command.confirmationId);
+  if (!entry) {
     return errorResponse(command.id, `No pending confirmation with id '${command.confirmationId}'`);
   }
   return successResponse(command.id, { denied: true });

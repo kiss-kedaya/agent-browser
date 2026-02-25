@@ -46,7 +46,18 @@ function getAuthDir(): string {
   return dir;
 }
 
+const SAFE_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+function validateProfileName(name: string): void {
+  if (!SAFE_NAME_RE.test(name)) {
+    throw new Error(
+      `Invalid auth profile name '${name}': only alphanumeric characters, hyphens, and underscores are allowed`
+    );
+  }
+}
+
 function profilePath(name: string): string {
+  validateProfileName(name);
   return path.join(getAuthDir(), `${name}.json`);
 }
 
@@ -91,7 +102,9 @@ export function saveAuthProfile(opts: {
   usernameSelector?: string;
   passwordSelector?: string;
   submitSelector?: string;
-}): AuthProfileMeta {
+}): AuthProfileMeta & { updated: boolean } {
+  const existing = readProfile(opts.name);
+
   const profile: AuthProfile = {
     name: opts.name,
     url: opts.url,
@@ -100,7 +113,8 @@ export function saveAuthProfile(opts: {
     usernameSelector: opts.usernameSelector,
     passwordSelector: opts.passwordSelector,
     submitSelector: opts.submitSelector,
-    createdAt: new Date().toISOString(),
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    lastLoginAt: existing?.lastLoginAt,
   };
 
   writeProfile(profile);
@@ -110,6 +124,8 @@ export function saveAuthProfile(opts: {
     url: profile.url,
     username: profile.username,
     createdAt: profile.createdAt,
+    lastLoginAt: profile.lastLoginAt,
+    updated: existing !== null,
   };
 }
 

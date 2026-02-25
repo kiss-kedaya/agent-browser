@@ -40,6 +40,7 @@ pub struct Config {
     pub allowed_domains: Option<Vec<String>>,
     pub action_policy: Option<String>,
     pub confirm_actions: Option<String>,
+    pub confirm_interactive: Option<bool>,
 }
 
 impl Config {
@@ -80,6 +81,7 @@ impl Config {
             allowed_domains: other.allowed_domains.or(self.allowed_domains),
             action_policy: other.action_policy.or(self.action_policy),
             confirm_actions: other.confirm_actions.or(self.confirm_actions),
+            confirm_interactive: other.confirm_interactive.or(self.confirm_interactive),
         }
     }
 }
@@ -323,7 +325,8 @@ pub fn parse_flags(args: &[String]) -> Flags {
             .or(config.action_policy),
         confirm_actions: env::var("AGENT_BROWSER_CONFIRM_ACTIONS").ok()
             .or(config.confirm_actions),
-        confirm_interactive: env_var_is_truthy("AGENT_BROWSER_CONFIRM_INTERACTIVE"),
+        confirm_interactive: env_var_is_truthy("AGENT_BROWSER_CONFIRM_INTERACTIVE")
+            || config.confirm_interactive.unwrap_or(false),
         cli_executable_path: false,
         cli_extensions: false,
         cli_profile: false,

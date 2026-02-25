@@ -273,9 +273,9 @@ Enable `--content-boundaries` to wrap page-sourced output in markers that help L
 export AGENT_BROWSER_CONTENT_BOUNDARIES=1
 agent-browser snapshot
 # Output:
-# --- AGENT_BROWSER_PAGE_CONTENT origin=https://example.com ---
+# --- AGENT_BROWSER_PAGE_CONTENT nonce=<hex> origin=https://example.com ---
 # [accessibility tree]
-# --- END_AGENT_BROWSER_PAGE_CONTENT ---
+# --- END_AGENT_BROWSER_PAGE_CONTENT nonce=<hex> ---
 ```
 
 ### Domain Allowlist

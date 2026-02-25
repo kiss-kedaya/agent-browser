@@ -92,6 +92,7 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
 
     match cmd {
         // === Navigation ===
+        // Maps to "navigate" action in protocol; reflected in ACTION_CATEGORIES in action-policy.ts
         "open" | "goto" | "navigate" => {
             let url = rest.first().ok_or_else(|| ParseError::MissingArguments {
                 context: cmd.to_string(),

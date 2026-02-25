@@ -43,11 +43,19 @@ export async function installDomainFilter(
       return;
     }
 
+    const urlStr = request.url();
+
+    // Block non-http(s) schemes (data:, javascript:, etc.)
+    if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
+      await route.abort('blockedbyclient');
+      return;
+    }
+
     let hostname: string;
     try {
-      hostname = new URL(request.url()).hostname.toLowerCase();
+      hostname = new URL(urlStr).hostname.toLowerCase();
     } catch {
-      await route.continue();
+      await route.abort('blockedbyclient');
       return;
     }
 
