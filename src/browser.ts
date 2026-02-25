@@ -925,6 +925,9 @@ export class BrowserManager {
       context.setDefaultTimeout(10000);
       this.contexts.push(context);
       this.setupContextTracking(context);
+      if (this.allowedDomains.length > 0) {
+        await installDomainFilter(context, this.allowedDomains);
+      }
       this.pages.push(page);
       this.activePageIndex = 0;
       this.setupPageTracking(page);
@@ -1065,10 +1068,13 @@ export class BrowserManager {
       this.browser = browser;
       context.setDefaultTimeout(getDefaultTimeout());
       this.contexts.push(context);
+      this.setupContextTracking(context);
+      if (this.allowedDomains.length > 0) {
+        await installDomainFilter(context, this.allowedDomains);
+      }
       this.pages.push(page);
       this.activePageIndex = 0;
       this.setupPageTracking(page);
-      this.setupContextTracking(context);
     } catch (error) {
       await this.closeKernelSession(session.session_id, kernelApiKey).catch((sessionError) => {
         console.error('Failed to close Kernel session during cleanup:', sessionError);
@@ -1138,10 +1144,13 @@ export class BrowserManager {
       this.browser = browser;
       context.setDefaultTimeout(getDefaultTimeout());
       this.contexts.push(context);
+      this.setupContextTracking(context);
+      if (this.allowedDomains.length > 0) {
+        await installDomainFilter(context, this.allowedDomains);
+      }
       this.pages.push(page);
       this.activePageIndex = 0;
       this.setupPageTracking(page);
-      this.setupContextTracking(context);
     } catch (error) {
       await this.closeBrowserUseSession(session.id, browserUseApiKey).catch((sessionError) => {
         console.error('Failed to close Browser Use session during cleanup:', sessionError);
@@ -1519,6 +1528,9 @@ export class BrowserManager {
         context.setDefaultTimeout(10000);
         this.contexts.push(context);
         this.setupContextTracking(context);
+        if (this.allowedDomains.length > 0) {
+          await installDomainFilter(context, this.allowedDomains);
+        }
       }
 
       for (const page of allPages) {

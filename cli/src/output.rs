@@ -5,6 +5,9 @@ use crate::connection::Response;
 
 static BOUNDARY_NONCE: OnceLock<String> = OnceLock::new();
 
+/// Per-process nonce for content boundary markers. Uses a CSPRNG (getrandom) so
+/// that untrusted page content cannot predict or spoof the boundary delimiter.
+/// Process ID or timestamps would be insufficient since pages can read those.
 fn get_boundary_nonce() -> &'static str {
     BOUNDARY_NONCE.get_or_init(|| {
         let mut buf = [0u8; 16];

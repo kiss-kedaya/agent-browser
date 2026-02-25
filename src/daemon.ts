@@ -598,9 +598,13 @@ export async function startDaemon(options?: {
       processQueue().catch((err) => {
         // Socket write failures during queue processing are non-fatal;
         // the client has likely disconnected.
-        console.warn('[warn] processQueue error:', err?.message ?? err);
+        // Only log err.message to avoid leaking sensitive fields (e.g. passwords) from command objects.
+        console.warn('[warn] processQueue error:', err?.message ?? String(err));
         if (process.env.AGENT_BROWSER_DEBUG === '1') {
-          console.error('[DEBUG] processQueue error (full):', err);
+          console.error(
+            '[DEBUG] processQueue error stack:',
+            err?.stack ?? err?.message ?? String(err)
+          );
         }
       });
     });

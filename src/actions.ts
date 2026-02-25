@@ -255,7 +255,18 @@ export function toAIFriendlyError(error: unknown, selector: string): Error {
 
 let actionPolicy: ActionPolicy | null = null;
 let confirmCategories = new Set<string>();
-const confirmedActions = new Set<string>();
+const confirmedActions = new Map<string, number>();
+const CONFIRMED_TTL_MS = 5 * 60 * 1000;
+
+function isConfirmed(id: string): boolean {
+  const ts = confirmedActions.get(id);
+  if (ts === undefined) return false;
+  if (Date.now() - ts > CONFIRMED_TTL_MS) {
+    confirmedActions.delete(id);
+    return false;
+  }
+  return true;
+}
 
 export function initActionPolicy(): void {
   const policyPath = process.env.AGENT_BROWSER_ACTION_POLICY;
@@ -300,7 +311,7 @@ export async function executeCommand(command: Command, browser: BrowserManager):
 
     // Policy enforcement (skip confirmation gate for re-executed confirmed actions)
     {
-      const decision = confirmedActions.has(command.id)
+      const decision = isConfirmed(command.id)
         ? checkPolicy(command.action, actionPolicy, new Set())
         : checkPolicy(command.action, actionPolicy, confirmCategories);
       if (decision === 'deny') {
@@ -1582,9 +1593,10 @@ async function handleGetAttribute(
   command: GetAttributeCommand,
   browser: BrowserManager
 ): Promise<Response> {
+  const page = browser.getPage();
   const locator = browser.getLocator(command.selector);
   const value = await locator.getAttribute(command.attribute);
-  return successResponse(command.id, { attribute: command.attribute, value });
+  return successResponse(command.id, { attribute: command.attribute, value, origin: page.url() });
 }
 
 async function handleGetText(command: GetTextCommand, browser: BrowserManager): Promise<Response> {
@@ -2108,9 +2120,10 @@ async function handleInputValue(
   command: InputValueCommand,
   browser: BrowserManager
 ): Promise<Response> {
+  const page = browser.getPage();
   const locator = browser.getLocator(command.selector);
   const value = await locator.inputValue();
-  return successResponse(command.id, { value });
+  return successResponse(command.id, { value, origin: page.url() });
 }
 
 async function handleSetValue(
@@ -2711,22 +2724,28 @@ async function handleDiffUrl(command: DiffUrlCommand, browser: BrowserManager): 
 }
 
 function handleAuthSave(command: AuthSaveCommand): Response {
-  const meta = saveAuthProfile({
-    name: command.name,
-    url: command.url,
-    username: command.username,
-    password: command.password,
-    usernameSelector: command.usernameSelector,
-    passwordSelector: command.passwordSelector,
-    submitSelector: command.submitSelector,
-  });
-  return successResponse(command.id, {
-    saved: !meta.updated,
-    updated: meta.updated,
-    name: meta.name,
-    url: meta.url,
-    username: meta.username,
-  });
+  try {
+    const meta = saveAuthProfile({
+      name: command.name,
+      url: command.url,
+      username: command.username,
+      password: command.password,
+      usernameSelector: command.usernameSelector,
+      passwordSelector: command.passwordSelector,
+      submitSelector: command.submitSelector,
+    });
+    return successResponse(command.id, {
+      saved: !meta.updated,
+      updated: meta.updated,
+      name: meta.name,
+      url: meta.url,
+      username: meta.username,
+    });
+  } catch (err) {
+    // Wrap to prevent password from leaking through error propagation
+    const msg = err instanceof Error ? err.message : 'Failed to save auth profile';
+    return errorResponse(command.id, msg);
+  }
 }
 
 async function handleAuthLogin(
@@ -2744,6 +2763,14 @@ async function handleAuthLogin(
   await page.goto(profile.url, { waitUntil: 'load' });
 
   // Use custom selectors if provided, otherwise auto-detect
+  const usingAutoDetect =
+    !profile.usernameSelector && !profile.passwordSelector && !profile.submitSelector;
+  if (usingAutoDetect) {
+    console.error(
+      `[agent-browser] Auth login '${command.name}': using auto-detected form selectors. ` +
+        `If login fails, specify --username-selector/--password-selector/--submit-selector with auth save.`
+    );
+  }
   const userSel =
     profile.usernameSelector ||
     'input[type="email"], input[type="text"][name*="user"], input[name*="email"], input[name*="login"]';
@@ -2804,7 +2831,7 @@ async function handleConfirm(command: ConfirmCommand, browser: BrowserManager): 
 
   // Re-execute the original command, bypassing the confirmation gate
   const originalCommand = entry.command as unknown as Command;
-  confirmedActions.add(originalCommand.id);
+  confirmedActions.set(originalCommand.id, Date.now());
   try {
     return await executeCommand(originalCommand, browser);
   } finally {

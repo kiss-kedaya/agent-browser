@@ -128,6 +128,11 @@ fn parse_bool_arg(args: &[String], i: usize) -> (bool, bool) {
 /// Extract --config <path> from args before full flag parsing.
 /// Returns `Some(Some(path))` if --config <path> found, `Some(None)` if --config
 /// was the last arg with no value, `None` if --config not present.
+///
+/// Only flags that consume a following argument need to be listed here.
+/// Boolean flags (--content-boundaries, --confirm-interactive, etc.) are
+/// intentionally absent -- they don't take a value, so they can't cause
+/// the next argument to be mis-consumed.
 fn extract_config_path(args: &[String]) -> Option<Option<String>> {
     const FLAGS_WITH_VALUE: &[&str] = &[
         "--session",
